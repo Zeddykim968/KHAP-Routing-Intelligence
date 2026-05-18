@@ -1,0 +1,106 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Project Final Link!!\KHAP Routing Intelligence\.venv\Scripts\uvicorn.exe\__main__.py", line 5, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\click\core.py", line 1524, in __call__
+    return self.main(*args, **kwargs)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\click\core.py", line 1445, in main
+    rv = self.invoke(ctx)
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\click\core.py", line 1308, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\click\core.py", line 877, in invoke
+    return callback(*args, **kwargs)
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\uvicorn\main.py", line 441, in main
+    run(
+    ~~~^
+        app,
+        ^^^^
+    ...<48 lines>...
+        reset_contextvars=reset_contextvars,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\uvicorn\main.py", line 609, in run
+    config.load_app()
+    ~~~~~~~~~~~~~~~^^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\uvicorn\config.py", line 415, in load_app
+    return import_from_string(self.app)
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\uvicorn\importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "C:\Users\user\AppData\Local\Python\pythoncore-3.14-64\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1398, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1342, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 938, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "C:\Project Final Link!!\KHAP Routing Intelligence\app\main.py", line 2, in <module>
+    from app.routes.recommendatons import router
+  File "C:\Project Final Link!!\KHAP Routing Intelligence\app\routes\recommendatons.py", line 2, in <module>
+    from app.services.supabase_service import supabase
+  File "C:\Project Final Link!!\KHAP Routing Intelligence\app\services\supabase_service.py", line 6, in <module>
+    supabase = create_client(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_KEY
+    )
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\supabase\_sync\client.py", line 305, in create_client
+    return SyncClient.create(
+           ~~~~~~~~~~~~~~~~~^
+        supabase_url=supabase_url, supabase_key=supabase_key, options=options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\supabase\_sync\client.py", line 98, in create
+    client = cls(supabase_url, supabase_key, options)
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\supabase\_sync\client.py", line 76, in __init__
+    self.auth = self._init_supabase_auth_client(
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        auth_url=self.auth_url,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+        client_options=options,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\supabase\_sync\client.py", line 218, in _init_supabase_auth_client
+    return SyncSupabaseAuthClient(
+        url=auth_url,
+    ...<4 lines>...
+        flow_type=client_options.flow_type,
+    )
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\supabase\_sync\auth_client.py", line 31, in __init__
+    SyncGoTrueClient.__init__(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<7 lines>...
+        flow_type=flow_type,
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\gotrue\_sync\gotrue_client.py", line 101, in __init__
+    SyncGoTrueBaseAPI.__init__(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        proxy=proxy,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "c:\Project Final Link!!\KHAP Routing Intelligence\.venv\Lib\site-packages\gotrue\_sync\gotrue_base_api.py", line 28, in __init__
+    self._http_client = http_client or SyncClient(
+                                       ~~~~~~~~~~^
+        verify=bool(verify),
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        http2=True,
+        ^^^^^^^^^^^
+    )
+    ^
+TypeError: Client.__init__() got an unexpected keyword argument 'proxy'
