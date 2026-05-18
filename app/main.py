@@ -8,8 +8,8 @@ app = FastAPI(
 
 app.include_router(router)
 
-app.get("/")
+@app.get("/")
 def home():
-    return{
+    return {
         "message": "KHAP Routing Intelligence working"
     }
