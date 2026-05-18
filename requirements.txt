@@ -10,3 +10,15 @@ sqlalchemy
 httpx
 python-multipart
 supabase
+fastapi
+geoalchemy2
+httpx
+numpy
+pandas
+psycopg2-binary
+pydantic
+python-dotenv
+python-multipart
+sqlalchemy
+supabase
+uvicorn
