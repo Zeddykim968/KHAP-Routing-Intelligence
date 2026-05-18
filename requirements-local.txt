@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-dotenv
+pydantic
+numpy
+pandas
+psycopg2-binary
+sqlalchemy
+httpx
+python-multipart
+supabase==1.2.4
