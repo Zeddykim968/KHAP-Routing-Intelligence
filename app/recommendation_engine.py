@@ -11,16 +11,22 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 LEVEL_SCORES = {
-    "National Referral Hospital": 100,
-    "Provincial General Hospital": 90,
+    "District Hospital": 100,
+    "Provincial General Hospital": 95,
     "Sub-District Hospital": 80,
     "Other Hospital": 75,
+    "Medical Centre": 70,
     "Health Centre": 60,
     "Nursing Home": 50,
     "Maternity Home": 45,
     "Medical Clinic": 40,
     "Dispensary": 30,
     "Dental Clinic": 25,
+    "Eye Centre": 25,
+    "Radiology Unit": 25,
+    "Laboratory (Stand-alone)": 20,
+    "VCT Centre (Stand-Alone)": 20,
+    "Health Programme": 15,
 }
 
 
@@ -51,4 +57,4 @@ def calculate_score(facility, user_lat, user_lon):
         0.20 * availability_score
     )
 
-    return score
+    return score, round(distance_km, 2)
