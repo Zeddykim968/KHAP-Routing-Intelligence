@@ -1,0 +1,333 @@
+This is where I think you should take KHAP next.
+
+Your current version is essentially:
+
+User Location
+     ↓
+FastAPI
+     ↓
+PostgreSQL (Supabase)
+     ↓
+Facility Recommendation
+
+Version 2.0 should become:
+
+                    ┌─────────────────────┐
+                    │  OpenStreetMap      │
+                    │  Roads Network      │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │      PostGIS        │
+                    │  (inside Supabase)  │
+                    └──────────┬──────────┘
+                               │
+      ┌────────────────────────┼───────────────────────┐
+      │                        │                       │
+      ▼                        ▼                       ▼
+Facility Engine       Routing Engine          Population Engine
+      │                        │                       │
+      ▼                        ▼                       ▼
+Nearest Hospital     Travel Time Analysis    Coverage Analysis
+      │                        │                       │
+      └───────────────┬────────┴──────────────┬────────┘
+                      ▼                       ▼
+                Recommendation         Accessibility
+                    Engine                Scoring
+                      │
+                      ▼
+                  FastAPI
+                      │
+                      ▼
+          React / Leaflet Dashboard
+Step 1: Upgrade Supabase to Real GIS Database
+
+Most people don't know this.
+
+Supabase is PostgreSQL.
+
+You can enable PostGIS.
+
+In SQL Editor:
+
+create extension if not exists postgis;
+
+Verify:
+
+select postgis_version();
+
+Create facility table:
+
+CREATE TABLE health_facilities (
+    id SERIAL PRIMARY KEY,
+    facility_name TEXT,
+    county TEXT,
+    facility_type TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    geom GEOGRAPHY(POINT,4326)
+);
+
+Populate geometry:
+
+UPDATE health_facilities
+SET geom =
+ST_SetSRID(
+ST_MakePoint(longitude,latitude),
+4326
+)::geography;
+
+Now PostGIS understands location.
+
+Step 2: Learn QGIS Through KHAP
+
+Do NOT watch random QGIS tutorials.
+
+Install QGIS and immediately connect it to Supabase.
+
+Connect QGIS to Supabase
+
+QGIS:
+
+Browser
+   ↓
+PostgreSQL
+   ↓
+New Connection
+
+Enter:
+
+Host
+Database
+Username
+Password
+
+from Supabase.
+
+Now every table becomes a GIS layer.
+
+This is the point where QGIS becomes useful.
+
+Step 3: Build Spatial Layers
+
+Load:
+
+Layer 1
+
+Health Facilities
+
+Point Layer
+Layer 2
+
+County Boundaries
+
+Get from:
+
+HDX Kenya Administrative Boundaries
+
+Layer 3
+
+Road Network
+
+Extract from:
+
+OpenStreetMap
+
+Layer 4
+
+Population
+
+Use:
+
+WorldPop
+
+Step 4: Data Quality Audit
+
+Before coding anything:
+
+Create scripts for:
+
+Missing Coordinates
+df[df.latitude.isnull()]
+Duplicate Facilities
+df[df.duplicated()]
+Facilities Outside Kenya
+
+Use GeoPandas.
+
+Check if every facility falls inside Kenya boundary.
+
+This alone will massively improve accuracy.
+
+Step 5: Replace Haversine With Real Routing
+
+Current:
+
+Straight Line Distance
+
+Future:
+
+Road Distance
+
+Install:
+
+pip install osmnx
+pip install networkx
+
+Example:
+
+import osmnx as ox
+
+graph = ox.graph_from_place(
+    "Nairobi, Kenya",
+    network_type="drive"
+)
+
+Now you have actual roads.
+
+Routing:
+
+route = nx.shortest_path(
+    graph,
+    origin,
+    destination,
+    weight="travel_time"
+)
+
+This is where KHAP becomes special.
+
+Step 6: Build Accessibility Analytics
+
+This is the most valuable feature.
+
+Questions:
+
+Coverage
+
+Who lives within:
+
+5 km
+10 km
+20 km
+
+of a facility?
+
+Travel Time
+
+Who lives more than:
+
+15 minutes
+30 minutes
+60 minutes
+
+from care?
+
+Facility Load
+
+Estimate:
+
+Population
+÷
+Nearby Facilities
+
+to identify overloaded facilities.
+
+Step 7: Accessibility Score
+
+For every ward:
+
+Access Score =
+40% Travel Time
+30% Facility Density
+20% Population Coverage
+10% Road Quality
+
+Output:
+
+0–20  Critical
+20–40 Poor
+40–60 Moderate
+60–80 Good
+80–100 Excellent
+
+Now policymakers instantly know where intervention is needed.
+
+Step 8: Dashboard
+
+Frontend:
+
+Maps
+
+Use:
+
+Leaflet.js
+
+or
+
+MapLibre GL JS
+
+Display:
+
+Facilities
+Roads
+Routes
+Accessibility scores
+Step 9: Version 2.0 Folder Structure
+KHAP-Routing-Intelligence/
+
+backend/
+│
+├── api/
+├── services/
+├── routing/
+│   ├── shortest_path.py
+│   ├── travel_time.py
+│   └── graph_builder.py
+│
+├── analytics/
+│   ├── accessibility.py
+│   ├── coverage.py
+│   ├── facility_load.py
+│   └── gap_analysis.py
+│
+├── database/
+│   ├── migrations/
+│   ├── postgis/
+│   └── seeds/
+│
+├── etl/
+│   ├── osm/
+│   ├── worldpop/
+│   ├── kmhfl/
+│   └── boundaries/
+│
+├── qgis/
+│   ├── project.qgz
+│   ├── styles/
+│   └── layers/
+│
+├── frontend/
+│   ├── leaflet/
+│   └── dashboard/
+│
+└── docs/
+The Feature That Could Get Attention
+
+Most health maps show:
+
+"Here are the hospitals."
+
+KHAP should answer:
+
+"If a new Level 4 hospital were built here, 85,000 additional people would gain access to care within 30 minutes."
+
+That's the type of intelligence that county governments, NGOs, and health planners care about.
+
+If you build:
+
+PostGIS integration,
+OSM-based routing,
+WorldPop population analysis,
+Accessibility scoring,
+
+you'll have one of the strongest geospatial/data science portfolio projects I've seen from a university student in Kenya.
