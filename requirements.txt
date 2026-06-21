@@ -9,3 +9,6 @@ sqlalchemy
 httpx
 python-multipart
 supabase
+networkx
+osmnx
+shapely

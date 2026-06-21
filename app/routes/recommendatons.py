@@ -91,6 +91,29 @@ def get_counties():
     return {"counties": counties}
 
 
+@router.get("/list")
+def list_facilities(
+    county: str = Query(None, description="Filter by county"),
+    type: str = Query(None, description="Filter by facility type"),
+    operational_only: bool = Query(True),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """Returns all facilities without requiring coordinates — used for map rendering."""
+    query = supabase.table("facilities").select("*")
+    if operational_only:
+        query = query.eq("operational_status", "Operational")
+    if type:
+        query = query.eq("type", type)
+    if county:
+        query = query.eq("county", county)
+    response = query.execute()
+    facilities = [
+        f for f in response.data
+        if f.get("latitude") is not None and f.get("longitude") is not None
+    ]
+    return {"results": facilities[:limit], "total": len(facilities)}
+
+
 @router.get("/facility/{facility_id}")
 def get_facility(facility_id: int):
     response = supabase.table("facilities").select("*").eq("facility_id", facility_id).execute()
