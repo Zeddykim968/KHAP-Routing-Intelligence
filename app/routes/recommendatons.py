@@ -1,22 +1,43 @@
 from fastapi import APIRouter, Query, HTTPException
 from app.services.supabase_service import supabase
+from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score, haversine
 
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
 
+def _resolve_coords(lat, lon, location):
+    """Return (lat, lon, label) from explicit coords or a location name."""
+    if lat is not None and lon is not None:
+        return lat, lon, None
+    if location:
+        resolved = resolve_location(location)
+        if not resolved:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Location '{location}' not found. Try a town, area, or county name."
+            )
+        return resolved["latitude"], resolved["longitude"], resolved["label"]
+    raise HTTPException(
+        status_code=422,
+        detail="Provide either lat+lon coordinates or a location name (e.g. location=Kisumu)."
+    )
+
+
 @router.get("")
 def get_recommendations(
-    lat: float = Query(..., description="User's latitude"),
-    lon: float = Query(..., description="User's longitude"),
+    lat: float = Query(None, description="User's latitude"),
+    lon: float = Query(None, description="User's longitude"),
+    location: str = Query(None, description="Town or area name e.g. 'Westlands', 'Kisumu'"),
     limit: int = Query(10, ge=1, le=50, description="Number of results to return"),
     type: str = Query(None, description="Filter by facility type"),
     county: str = Query(None, description="Filter by county"),
     radius_km: float = Query(None, description="Only return facilities within this radius (km)"),
     operational_only: bool = Query(True, description="Only return operational facilities"),
 ):
-    query = supabase.table("facilities").select("*")
+    lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
+    query = supabase.table("facilities").select("*")
     if operational_only:
         query = query.eq("operational_status", "Operational")
     if type:
@@ -25,9 +46,7 @@ def get_recommendations(
         query = query.eq("county", county)
 
     response = query.execute()
-    facilities = response.data
-
-    facilities = [f for f in facilities if f.get("latitude") is not None and f.get("longitude") is not None]
+    facilities = [f for f in response.data if f.get("latitude") is not None and f.get("longitude") is not None]
 
     if not facilities:
         raise HTTPException(status_code=404, detail="No facilities found matching the criteria")
@@ -37,11 +56,7 @@ def get_recommendations(
         score, distance_km = calculate_score(facility, lat, lon)
         if radius_km is not None and distance_km > radius_km:
             continue
-        scored.append({
-            **facility,
-            "distance_km": distance_km,
-            "score": round(score, 4),
-        })
+        scored.append({**facility, "distance_km": distance_km, "score": round(score, 4)})
 
     if not scored:
         raise HTTPException(
@@ -52,7 +67,11 @@ def get_recommendations(
     scored.sort(key=lambda x: x["score"], reverse=True)
 
     return {
-        "user_location": {"latitude": lat, "longitude": lon},
+        "user_location": {
+            "latitude": lat,
+            "longitude": lon,
+            **({"resolved_from": resolved_label} if resolved_label else {}),
+        },
         "filters": {
             "type": type,
             "county": county,
@@ -66,14 +85,17 @@ def get_recommendations(
 
 @router.get("/nearby")
 def get_nearby(
-    lat: float = Query(..., description="User's latitude"),
-    lon: float = Query(..., description="User's longitude"),
+    lat: float = Query(None, description="User's latitude"),
+    lon: float = Query(None, description="User's longitude"),
+    location: str = Query(None, description="Town or area name e.g. 'Nakuru', 'Thika'"),
     radius_km: float = Query(20, description="Search radius in km"),
     limit: int = Query(5, ge=1, le=20),
 ):
+    lat, lon, resolved_label = _resolve_coords(lat, lon, location)
     return get_recommendations(
-        lat=lat, lon=lon, limit=limit, type=None,
-        county=None, radius_km=radius_km, operational_only=True,
+        lat=lat, lon=lon, location=None,
+        limit=limit, type=None, county=None,
+        radius_km=radius_km, operational_only=True,
     )
 
 
@@ -128,11 +150,7 @@ def search_facilities(
     limit: int = Query(10, ge=1, le=50),
     operational_only: bool = Query(True),
 ):
-    """
-    Full-text name search across all 7,406 facilities.
-    Matches on facility name OR nearest town (case-insensitive, substring match).
-    Filters are pushed to Supabase so the full dataset is searched.
-    """
+    """Full-text search by facility name or nearest town across all 7,406 facilities."""
     term = q.strip()
     pattern = f"%{term}%"
 
@@ -160,8 +178,4 @@ def search_facilities(
         (f.get("name") or "").lower(),
     ))
 
-    return {
-        "query": q,
-        "total_found": len(merged),
-        "results": merged[:limit],
-    }
+    return {"query": q, "total_found": len(merged), "results": merged[:limit]}

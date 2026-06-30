@@ -1,28 +1,50 @@
 from fastapi import APIRouter, Query, HTTPException
 from app.services.supabase_service import supabase
+from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
 router = APIRouter(prefix="/ambulance", tags=["Emergency"])
 
+EMERGENCY_TYPES = [
+    "District Hospital",
+    "Provincial General Hospital",
+    "Sub-District Hospital",
+    "Other Hospital",
+    "Medical Centre",
+    "Health Centre",
+    "National Referral Hospital",
+]
+
+
+def _resolve_coords(lat, lon, location):
+    if lat is not None and lon is not None:
+        return lat, lon, None
+    if location:
+        resolved = resolve_location(location)
+        if not resolved:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Location '{location}' not found. Try a town, area, or county name."
+            )
+        return resolved["latitude"], resolved["longitude"], resolved["label"]
+    raise HTTPException(
+        status_code=422,
+        detail="Provide either lat+lon coordinates or a location name (e.g. location=Westlands)."
+    )
+
 
 @router.get("")
 def emergency_nearest(
-    lat: float = Query(..., description="Emergency latitude"),
-    lon: float = Query(..., description="Emergency longitude"),
+    lat: float = Query(None, description="Emergency latitude"),
+    lon: float = Query(None, description="Emergency longitude"),
+    location: str = Query(None, description="Town or area name e.g. 'Thika', 'Eldoret'"),
     require_beds: bool = Query(True, description="Only return facilities with beds"),
 ):
     """
-    Returns the single closest facility capable of handling an emergency.
-    Prioritises hospitals and health centres with beds, open 24 hours.
+    Returns the single closest emergency-capable facility plus 3 alternatives.
+    Accepts either lat/lon coordinates or a plain location name.
     """
-    EMERGENCY_TYPES = [
-        "District Hospital",
-        "Provincial General Hospital",
-        "Sub-District Hospital",
-        "Other Hospital",
-        "Medical Centre",
-        "Health Centre",
-    ]
+    lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
     response = (
         supabase.table("facilities")
@@ -52,16 +74,16 @@ def emergency_nearest(
     scored.sort(key=lambda x: (x[0], -x[1]), reverse=True)
     _, dist_km, best = scored[0]
 
+    def fmt(f, d):
+        return {
+            **f,
+            "distance_km": d,
+            "estimated_drive_minutes": round((d * 1.35 / 60) * 60),
+        }
+
     return {
         "emergency": True,
-        "user_location": {"latitude": lat, "longitude": lon},
-        "nearest_facility": {
-            **best,
-            "distance_km": dist_km,
-            "estimated_drive_minutes": round((dist_km / 60) * 60),
-        },
-        "alternatives": [
-            {**f, "distance_km": d, "estimated_drive_minutes": round((d / 60) * 60)}
-            for _, d, f in scored[1:4]
-        ],
+        "search_location": resolved_label or {"latitude": lat, "longitude": lon},
+        "nearest_facility": fmt(best, dist_km),
+        "alternatives": [fmt(f, d) for _, d, f in scored[1:4]],
     }

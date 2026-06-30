@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Form
 from fastapi.responses import PlainTextResponse
 from app.services.supabase_service import supabase
+from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
 router = APIRouter(prefix="/ussd", tags=["USSD"])
@@ -73,7 +74,7 @@ def ussd_handler(
     parts = [p for p in text.split("*") if p] if text else []
     level = len(parts)
 
-    # Level 0 — Welcome
+    # ── Level 0 — Welcome ────────────────────────────────────────────────────
     if level == 0:
         return (
             "CON Welcome to KHAP\n"
@@ -83,11 +84,15 @@ def ussd_handler(
             "99. Exit"
         )
 
-    # Level 1 — Main menu
+    # ── Level 1 — Main menu choice ───────────────────────────────────────────
     if level == 1:
         choice = parts[0]
         if choice == "1":
-            return "CON Enter your coordinates (lat,lon)\nExample: -1.28,36.82"
+            return (
+                "CON Enter your town or area name:\n"
+                "e.g. Westlands, Kisumu, Eldoret,\n"
+                "Nakuru, Mombasa, Thika..."
+            )
         elif choice == "2":
             return county_page_menu(0)
         elif choice == "99":
@@ -95,26 +100,28 @@ def ussd_handler(
         else:
             return "CON Invalid choice.\n1. Find nearby facility\n2. Search by county\n99. Exit"
 
-    # --- NEARBY FLOW (parts[0] == "1") ---
+    # ── NEARBY FLOW (parts[0] == "1") ────────────────────────────────────────
 
-    # Level 2 — coords entered
+    # Level 2 — location name entered, resolve it
     if level == 2 and parts[0] == "1":
-        try:
-            lat_str, lon_str = parts[1].split(",")
-            float(lat_str.strip())
-            float(lon_str.strip())
-        except Exception:
-            return "CON Invalid format. Enter as lat,lon\nExample: -1.28,36.82"
-        return service_menu("Location received.")
+        location_name = parts[1].strip()
+        resolved = resolve_location(location_name)
+        if not resolved:
+            return (
+                "CON Location not found.\n"
+                "Please try a nearby town:\n"
+                "e.g. Westlands, Kisumu, Thika"
+            )
+        return service_menu(f"Location: {resolved['label']}")
 
     # Level 3 — service selected, return results
     if level == 3 and parts[0] == "1":
-        try:
-            lat_str, lon_str = parts[1].split(",")
-            lat, lon = float(lat_str.strip()), float(lon_str.strip())
-        except Exception:
-            return "END Error parsing location. Please try again."
+        location_name = parts[1].strip()
+        resolved = resolve_location(location_name)
+        if not resolved:
+            return "END Location not found. Dial again and try a different town."
 
+        lat, lon = resolved["latitude"], resolved["longitude"]
         service_choice = parts[2]
         facility_type = SERVICE_TYPE_MAP.get(service_choice)
 
@@ -129,19 +136,19 @@ def ussd_handler(
             score, dist = calculate_score(f, lat, lon)
             if dist <= 50:
                 scored.append((score, dist, f))
-        scored.sort(reverse=True)
+        scored.sort(key=lambda x: (x[0], -x[1]), reverse=True)
 
         if not scored:
             return "END No facilities found within 50km.\nTry a different service type."
 
-        lines = ["END Nearest facilities:"]
+        lines = [f"END Nearest to {resolved['label']}:"]
         for _, dist, f in scored[:4]:
             lines.append(f"- {f['name']} ({dist}km)")
             if f.get("nearest_town"):
                 lines.append(f"  {f['nearest_town']}")
         return "\n".join(lines)
 
-    # --- COUNTY FLOW (parts[0] == "2") ---
+    # ── COUNTY FLOW (parts[0] == "2") ────────────────────────────────────────
 
     # Level 2 — county or page navigation
     if level == 2 and parts[0] == "2":
