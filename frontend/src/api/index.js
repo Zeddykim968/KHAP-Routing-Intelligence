@@ -28,37 +28,33 @@ export async function fetchFacilityTypes() {
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
-export async function fetchAccessibilityScores(county = null) {
+export async function fetchAccessibilityScores() {
   const res = await fetch(`${BASE}/analytics/counties`);
   if (!res.ok) throw new Error("Failed to fetch accessibility");
   const data = await res.json();
-  // Map county rankings into the shape the UI expects
   return {
     counties: (data.counties || []).map((c) => ({
       county: c.county,
       score: c.accessibility_score,
-      band: c.accessibility_score >= 70 ? "Excellent"
-          : c.accessibility_score >= 45 ? "Good"
-          : c.accessibility_score >= 20 ? "Moderate"
-          : "Poor",
+      band:
+        c.accessibility_score >= 70 ? "Excellent"
+        : c.accessibility_score >= 45 ? "Good"
+        : c.accessibility_score >= 20 ? "Moderate"
+        : "Poor",
     })),
   };
 }
 
-export async function fetchCoverage(lat, lon, county = null) {
+export async function fetchCoverage(lat, lon) {
   const p = new URLSearchParams({ lat, lon });
-  if (county) p.set("county", county);
   const res = await fetch(`${BASE}/gis/coverage?${p}`);
   if (!res.ok) throw new Error("Failed to fetch coverage");
   const data = await res.json();
-  // Adapt to shape Sidebar expects
   return {
     ...data,
-    access_message: `${data.total_facilities} facilities within ${data.radius_km}km`,
+    access_message: `${data.total_facilities} facilities within ${data.radius_km} km`,
     access_status: data.total_facilities >= 5 ? "adequate" : "inadequate",
-    coverage_bands: {
-      within_10km: { count: data.total_facilities },
-    },
+    coverage_bands: { within_10km: { count: data.total_facilities } },
   };
 }
 
@@ -70,10 +66,11 @@ export async function fetchCountyRankings() {
     rankings: (data.counties || []).map((c) => ({
       ...c,
       score: c.accessibility_score,
-      band: c.accessibility_score >= 70 ? "Excellent"
-          : c.accessibility_score >= 45 ? "Good"
-          : c.accessibility_score >= 20 ? "Moderate"
-          : "Poor",
+      band:
+        c.accessibility_score >= 70 ? "Excellent"
+        : c.accessibility_score >= 45 ? "Good"
+        : c.accessibility_score >= 20 ? "Moderate"
+        : "Poor",
     })),
   };
 }
@@ -90,32 +87,72 @@ export async function fetchCountyReport(county) {
   return res.json();
 }
 
-// ── Routing ───────────────────────────────────────────────────────────────────
+// ── Smart Routing ─────────────────────────────────────────────────────────────
+
+export async function fetchEmergencyTypes() {
+  const res = await fetch(`${BASE}/smart/emergency-types`);
+  if (!res.ok) throw new Error("Failed to fetch emergency types");
+  return res.json();
+}
+
+export async function fetchInsuranceProviders() {
+  const res = await fetch(`${BASE}/smart/insurance-providers`);
+  if (!res.ok) throw new Error("Failed to fetch insurance providers");
+  return res.json();
+}
+
+export async function fetchSmartRecommendations({
+  lat, lon, emergencyType, insurance, financialLevel, radiusKm = 50, limit = 10,
+} = {}) {
+  const p = new URLSearchParams();
+  if (lat != null) p.set("lat", lat);
+  if (lon != null) p.set("lon", lon);
+  if (emergencyType) p.set("emergency_type", emergencyType);
+  if (insurance) p.set("insurance", insurance);
+  if (financialLevel && financialLevel !== "Any") p.set("financial_level", financialLevel);
+  p.set("radius_km", radiusKm);
+  p.set("limit", limit);
+  const res = await fetch(`${BASE}/smart/recommend?${p}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "No facilities found");
+  }
+  return res.json();
+}
+
+export async function fetchRoadRoute(fromLat, fromLon, toLat, toLon) {
+  const p = new URLSearchParams({ from_lat: fromLat, from_lon: fromLon, to_lat: toLat, to_lon: toLon });
+  const res = await fetch(`${BASE}/smart/road-route?${p}`);
+  if (!res.ok) throw new Error("Failed to fetch road route");
+  return res.json();
+}
+
+export async function fetchPopulationServed(lat, lon, radiusKm = 10) {
+  const p = new URLSearchParams({ lat, lon, radius_km: radiusKm });
+  const res = await fetch(`${BASE}/smart/population-served?${p}`);
+  if (!res.ok) throw new Error("Failed to fetch population data");
+  return res.json();
+}
+
+// ── Travel-time (legacy) ──────────────────────────────────────────────────────
 
 export async function fetchRoute(fromLat, fromLon, toLat, toLon) {
-  const p = new URLSearchParams({
-    from_lat: fromLat, from_lon: fromLon,
-    to_lat: toLat, to_lon: toLon,
-  });
-  const res = await fetch(`${BASE}/gis/travel-time?${p}`);
-  if (!res.ok) throw new Error("Failed to fetch route");
-  const data = await res.json();
-  return {
+  return fetchRoadRoute(fromLat, fromLon, toLat, toLon).then((data) => ({
     ...data,
-    distance_km: data.estimated_road_km,
-    duration_minutes: data.estimated_minutes,
-    method: "estimated",
-  };
+    distance_km: data.distance_km,
+    duration_minutes: data.duration_minutes,
+  }));
 }
+
+// ── Emergency zones (legacy sidebar compat) ───────────────────────────────────
 
 export async function fetchEmergencyZones(lat, lon) {
   const p = new URLSearchParams({ lat, lon, radius_km: 50 });
   const res = await fetch(`${BASE}/gis/catchment?${p}`);
   if (!res.ok) throw new Error("Failed to fetch emergency zones");
   const data = await res.json();
-  // Group catchment facilities into time-based zones
   const zones = { critical: [], urgent: [], standard: [], remote: [] };
-  for (const f of (data.catchment || [])) {
+  for (const f of data.catchment || []) {
     const min = f.estimated_minutes || 999;
     const entry = { ...f, est_response_min: min };
     if (min < 15) zones.critical.push(entry);
@@ -126,18 +163,8 @@ export async function fetchEmergencyZones(lat, lon) {
   return { zones };
 }
 
-// ── Misc (unused but kept for compatibility) ───────────────────────────────────
-
-export async function fetchFacilityStats(county = null) {
-  const p = new URLSearchParams();
-  if (county) p.set("county", county);
+export async function fetchFacilityStats() {
   const res = await fetch(`${BASE}/analytics/summary`);
   if (!res.ok) throw new Error("Failed to fetch stats");
-  return res.json();
-}
-
-export async function fetchEmergencyReadiness() {
-  const res = await fetch(`${BASE}/analytics/summary`);
-  if (!res.ok) throw new Error("Failed to fetch emergency readiness");
   return res.json();
 }
