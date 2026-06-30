@@ -4,79 +4,69 @@ const LAYERS = [
   { id: "facilities", label: "🏥 Facilities" },
   { id: "accessibility", label: "📊 Accessibility" },
   { id: "coverage", label: "🎯 Coverage" },
+  { id: "emergency", label: "🚨 Emergency" },
+  { id: "reports", label: "📋 Reports" },
 ];
 
-const styles = {
-  bar: {
-    display: "flex",
-    alignItems: "center",
-    background: "#111827",
-    borderBottom: "1px solid #1f2937",
-    padding: "0 16px",
-    height: 52,
-    gap: 12,
-    flexShrink: 0,
-  },
-  logo: {
-    fontWeight: 700,
-    fontSize: 16,
-    color: "#10b981",
-    letterSpacing: "0.05em",
-    marginRight: 8,
-  },
-  version: {
-    fontSize: 11,
-    color: "#6b7280",
-    marginRight: "auto",
-  },
-  layerBtn: (active) => ({
-    padding: "5px 12px",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
-    background: active ? "#10b981" : "#1f2937",
-    color: active ? "#fff" : "#9ca3af",
-    transition: "all 0.15s",
-  }),
-  toggleBtn: {
-    marginLeft: 8,
-    background: "#1f2937",
-    border: "none",
-    color: "#9ca3af",
-    cursor: "pointer",
-    borderRadius: 6,
-    padding: "5px 10px",
-    fontSize: 13,
-  },
-  loading: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    background: "#f59e0b",
-    marginLeft: 8,
-    animation: "pulse 1s infinite",
-  },
-};
+export default function TopBar({
+  activeLayer, onLayerChange, sidebarOpen, onToggleSidebar,
+  loading, theme, onThemeToggle, searchQuery, onSearch, facilityCount,
+}) {
+  const dark = theme === "dark";
+  const s = {
+    bar: {
+      display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8,
+      background: dark ? "#111827" : "#ffffff",
+      borderBottom: `1px solid ${dark ? "#1f2937" : "#e5e7eb"}`,
+      padding: "0 16px", minHeight: 52, flexShrink: 0,
+    },
+    logo: { fontWeight: 800, fontSize: 16, color: "#10b981", letterSpacing: "0.05em" },
+    badge: { fontSize: 10, background: "#10b981", color: "#fff", borderRadius: 4, padding: "2px 6px", fontWeight: 700 },
+    search: {
+      background: dark ? "#1f2937" : "#f3f4f6",
+      border: `1px solid ${dark ? "#374151" : "#d1d5db"}`,
+      color: dark ? "#e2e8f0" : "#111827",
+      borderRadius: 6, padding: "5px 10px", fontSize: 13, width: 200,
+      outline: "none",
+    },
+    count: { fontSize: 11, color: dark ? "#6b7280" : "#9ca3af", marginRight: "auto" },
+    layerBtn: (active) => ({
+      padding: "5px 11px", borderRadius: 6, border: "none", cursor: "pointer",
+      fontSize: 12, fontWeight: 500,
+      background: active ? "#10b981" : (dark ? "#1f2937" : "#f3f4f6"),
+      color: active ? "#fff" : (dark ? "#9ca3af" : "#6b7280"),
+      transition: "all 0.15s",
+    }),
+    iconBtn: {
+      background: dark ? "#1f2937" : "#f3f4f6",
+      border: "none", color: dark ? "#9ca3af" : "#6b7280",
+      cursor: "pointer", borderRadius: 6, padding: "5px 10px", fontSize: 13,
+    },
+    dot: { width: 8, height: 8, borderRadius: "50%", background: "#f59e0b", flexShrink: 0 },
+  };
 
-export default function TopBar({ activeLayer, onLayerChange, sidebarOpen, onToggleSidebar, loading }) {
   return (
-    <div style={styles.bar}>
-      <span style={styles.logo}>KHAP</span>
-      <span style={styles.version}>Kenya Health Access Platform v2.0</span>
+    <div style={s.bar}>
+      <span style={s.logo}>KHAP</span>
+      <span style={s.badge}>v3</span>
+      <input
+        style={s.search}
+        placeholder="Search facilities, counties…"
+        value={searchQuery}
+        onChange={(e) => onSearch(e.target.value)}
+      />
+      <span style={s.count}>{facilityCount.toLocaleString()} facilities</span>
       {LAYERS.map((l) => (
-        <button
-          key={l.id}
-          style={styles.layerBtn(activeLayer === l.id)}
-          onClick={() => onLayerChange(l.id)}
-        >
+        <button key={l.id} style={s.layerBtn(activeLayer === l.id)} onClick={() => onLayerChange(l.id)}>
           {l.label}
         </button>
       ))}
-      {loading && <div style={styles.loading} />}
-      <button style={styles.toggleBtn} onClick={onToggleSidebar}>
-        {sidebarOpen ? "◀ Hide" : "▶ Show"}
+      {loading && <div style={s.dot} />}
+      <button style={s.iconBtn} onClick={onThemeToggle} title="Toggle theme">
+        {theme === "dark" ? "☀️" : "🌙"}
+      </button>
+      <button style={s.iconBtn} onClick={onToggleSidebar}>
+        {sidebarOpen ? "◀" : "▶"}
       </button>
     </div>
   );

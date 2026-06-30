@@ -9,6 +9,12 @@ sqlalchemy
 httpx
 python-multipart
 supabase
-networkx
-osmnx
-shapely
+python-jose[cryptography]
+passlib[bcrypt]
+slowapi
+cachetools
+cachetools
+passlib[bcrypt]
+python-jose[cryptography]
+slowapi
+email-validator
