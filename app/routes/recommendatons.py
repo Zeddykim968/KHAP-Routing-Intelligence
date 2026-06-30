@@ -120,3 +120,48 @@ def get_facility(facility_id: int):
     if not response.data:
         raise HTTPException(status_code=404, detail="Facility not found")
     return response.data[0]
+
+
+@router.get("/search")
+def search_facilities(
+    q: str = Query(..., min_length=2, description="Search term — facility name or town"),
+    limit: int = Query(10, ge=1, le=50),
+    operational_only: bool = Query(True),
+):
+    """
+    Full-text name search across all 7,406 facilities.
+    Matches on facility name OR nearest town (case-insensitive, substring match).
+    Filters are pushed to Supabase so the full dataset is searched.
+    """
+    term = q.strip()
+    pattern = f"%{term}%"
+
+    by_name = supabase.table("facilities").select("*").ilike("name", pattern)
+    by_town = supabase.table("facilities").select("*").ilike("nearest_town", pattern)
+
+    if operational_only:
+        by_name = by_name.eq("operational_status", "Operational")
+        by_town = by_town.eq("operational_status", "Operational")
+
+    name_results = by_name.limit(limit).execute().data
+    town_results = by_town.limit(limit).execute().data
+
+    seen_ids = set()
+    merged = []
+    for f in name_results + town_results:
+        fid = f.get("facility_id")
+        if fid not in seen_ids:
+            seen_ids.add(fid)
+            merged.append(f)
+
+    term_lower = term.lower()
+    merged.sort(key=lambda f: (
+        not (f.get("name") or "").lower().startswith(term_lower),
+        (f.get("name") or "").lower(),
+    ))
+
+    return {
+        "query": q,
+        "total_found": len(merged),
+        "results": merged[:limit],
+    }
