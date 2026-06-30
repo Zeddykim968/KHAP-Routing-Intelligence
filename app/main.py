@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.recommendatons import router as recommendations_router
 from app.routes.ussd import router as ussd_router
 from app.routes.sms import router as sms_router
+from app.routes.ambulance import router as ambulance_router
 
 app = FastAPI(
     title="KHAP Routing Intelligence",
@@ -26,6 +27,7 @@ app.add_middleware(
 app.include_router(recommendations_router)
 app.include_router(ussd_router)
 app.include_router(sms_router)
+app.include_router(ambulance_router)
 
 
 @app.get("/", tags=["Meta"])
