@@ -33,3 +33,19 @@ sqlalchemy
 # ── Testing (Phase 12) ────────────────────────────────────────────────────────
 pytest
 pytest-asyncio
+cachetools
+fastapi
+geopy
+httpx
+numpy
+pandas
+passlib[bcrypt]
+psycopg2-binary
+pydantic[email]
+python-dotenv
+python-jose[cryptography]
+python-multipart
+shapely
+slowapi
+sqlalchemy
+uvicorn[standard]

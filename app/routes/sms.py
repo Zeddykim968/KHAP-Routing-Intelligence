@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body
 from pydantic import BaseModel
-from app.services.supabase_service import supabase
+from app.services.db_service import query
 from app.recommendation_engine import calculate_score
 
 router = APIRouter(prefix="/sms", tags=["SMS"])
@@ -28,7 +28,6 @@ def handle_sms(payload: SMSRequest = Body(...)):
     message = payload.message.strip().upper()
     parts = message.split()
 
-    # HELP command
     if message in ("HELP", "HI", "HELLO", "START"):
         return {
             "response": (
@@ -40,7 +39,6 @@ def handle_sms(payload: SMSRequest = Body(...)):
             )
         }
 
-    # FIND command
     if parts and parts[0] == "FIND" and len(parts) >= 2:
         county = parts[1].title()
         facility_type = None
@@ -59,12 +57,13 @@ def handle_sms(payload: SMSRequest = Body(...)):
         if len(parts) >= 3:
             facility_type = type_map.get(parts[2].upper())
 
-        query = supabase.table("facilities").select("*").eq("operational_status", "Operational").eq("county", county)
+        sql = "SELECT * FROM facilities WHERE operational_status = 'Operational' AND county = %s"
+        params = [county]
         if facility_type:
-            query = query.eq("type", facility_type)
+            sql += " AND type = %s"
+            params.append(facility_type)
 
-        response = query.execute()
-        facilities = response.data
+        facilities = query(sql, params)
 
         if not facilities:
             return {"response": f"No facilities found in {county}. Check spelling and try again."}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Form
 from fastapi.responses import PlainTextResponse
-from app.services.supabase_service import supabase
+from app.services.db_service import query
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
@@ -74,7 +74,6 @@ def ussd_handler(
     parts = [p for p in text.split("*") if p] if text else []
     level = len(parts)
 
-    # ── Level 0 — Welcome ────────────────────────────────────────────────────
     if level == 0:
         return (
             "CON Welcome to KHAP\n"
@@ -84,7 +83,6 @@ def ussd_handler(
             "99. Exit"
         )
 
-    # ── Level 1 — Main menu choice ───────────────────────────────────────────
     if level == 1:
         choice = parts[0]
         if choice == "1":
@@ -103,9 +101,6 @@ def ussd_handler(
         else:
             return "CON Invalid choice.\n1. Find nearby facility\n2. Search by county\n99. Exit"
 
-    # ── NEARBY FLOW (parts[0] == "1") ────────────────────────────────────────
-
-    # Level 2 — location name entered, resolve it
     if level == 2 and parts[0] == "1":
         location_name = parts[1].strip()
         resolved = resolve_location(location_name)
@@ -117,7 +112,6 @@ def ussd_handler(
             )
         return service_menu(f"Location: {resolved['label']}")
 
-    # Level 3 — service selected, return results
     if level == 3 and parts[0] == "1":
         location_name = parts[1].strip()
         resolved = resolve_location(location_name)
@@ -128,11 +122,13 @@ def ussd_handler(
         service_choice = parts[2]
         facility_type = SERVICE_TYPE_MAP.get(service_choice)
 
-        query = supabase.table("facilities").select("*").eq("operational_status", "Operational")
+        sql = "SELECT * FROM facilities WHERE operational_status = 'Operational'"
+        params = []
         if facility_type:
-            query = query.eq("type", facility_type)
-        response = query.execute()
-        facilities = [f for f in response.data if f.get("latitude") and f.get("longitude")]
+            sql += " AND type = %s"
+            params.append(facility_type)
+
+        facilities = [f for f in query(sql, params) if f.get("latitude") and f.get("longitude")]
 
         scored = []
         for f in facilities:
@@ -151,9 +147,6 @@ def ussd_handler(
                 lines.append(f"  {f['nearest_town']}")
         return "\n".join(lines)
 
-    # ── COUNTY FLOW (parts[0] == "2") ────────────────────────────────────────
-
-    # Level 2 — county or page navigation
     if level == 2 and parts[0] == "2":
         choice = parts[1]
         if choice == "98":
@@ -169,7 +162,6 @@ def ussd_handler(
             return "END Invalid county selection. Please try again."
         return service_menu(f"County: {county}")
 
-    # Level 3 — service selected, return county results
     if level == 3 and parts[0] == "2":
         try:
             idx = int(parts[1]) - 1
@@ -180,16 +172,13 @@ def ussd_handler(
         service_choice = parts[2]
         facility_type = SERVICE_TYPE_MAP.get(service_choice)
 
-        query = (
-            supabase.table("facilities")
-            .select("name,nearest_town,type")
-            .eq("operational_status", "Operational")
-            .eq("county", county)
-        )
+        sql = "SELECT name, nearest_town, type FROM facilities WHERE operational_status = 'Operational' AND county = %s"
+        params = [county]
         if facility_type:
-            query = query.eq("type", facility_type)
-        response = query.execute()
-        facilities = response.data
+            sql += " AND type = %s"
+            params.append(facility_type)
+
+        facilities = query(sql, params)
 
         if not facilities:
             return f"END No facilities found in {county}.\nTry a different service type."

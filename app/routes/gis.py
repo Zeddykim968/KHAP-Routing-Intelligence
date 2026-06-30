@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException
 from collections import Counter, defaultdict
-from app.services.supabase_service import supabase
+from app.services.db_service import query
 from app.services.location_service import resolve_location
 from app.recommendation_engine import haversine
 
@@ -10,21 +10,7 @@ AVG_SPEED_KMH = 40
 
 
 def _fetch_all(columns: str):
-    """Fetch ALL rows via pagination, bypassing Supabase's 1,000-row server cap."""
-    all_rows, page_size, offset = [], 1000, 0
-    while True:
-        batch = (
-            supabase.table("facilities")
-            .select(columns)
-            .range(offset, offset + page_size - 1)
-            .execute()
-            .data
-        )
-        all_rows.extend(batch)
-        if len(batch) < page_size:
-            break
-        offset += page_size
-    return all_rows
+    return query(f"SELECT {columns} FROM facilities")
 
 
 def _resolve_coords(lat, lon, location):
@@ -44,8 +30,6 @@ def _resolve_coords(lat, lon, location):
     )
 
 
-# ─── Coverage Analysis ───────────────────────────────────────────────────────
-
 @router.get("/coverage")
 def coverage_analysis(
     lat: float = Query(None, description="Centre latitude"),
@@ -55,7 +39,7 @@ def coverage_analysis(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = _fetch_all("latitude,longitude,type,owner,beds,cots,open_24_hours,operational_status,name,county")
+    rows = _fetch_all("latitude, longitude, type, owner, beds, cots, open_24_hours, operational_status, name, county")
     operational = [
         r for r in rows
         if r.get("operational_status") == "Operational"
@@ -110,8 +94,6 @@ def coverage_analysis(
     }
 
 
-# ─── Travel-Time Estimate ────────────────────────────────────────────────────
-
 @router.get("/travel-time")
 def travel_time(
     from_lat: float = Query(None),
@@ -121,7 +103,6 @@ def travel_time(
     to_lon: float = Query(None),
     to_location: str = Query(None, description="Destination town e.g. 'Nairobi'"),
 ):
-    """Straight-line distance converted to estimated road travel time."""
     from_lat, from_lon, from_label = _resolve_coords(from_lat, from_lon, from_location)
     to_lat, to_lon, to_label = _resolve_coords(to_lat, to_lon, to_location)
 
@@ -139,8 +120,6 @@ def travel_time(
     }
 
 
-# ─── Accessibility Scoring ───────────────────────────────────────────────────
-
 @router.get("/accessibility")
 def accessibility_score(
     lat: float = Query(None),
@@ -149,7 +128,7 @@ def accessibility_score(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = _fetch_all("latitude,longitude,type,beds,cots,open_24_hours,operational_status")
+    rows = _fetch_all("latitude, longitude, type, beds, cots, open_24_hours, operational_status")
     operational = [
         r for r in rows
         if r.get("operational_status") == "Operational"
@@ -199,8 +178,6 @@ def accessibility_score(
     }
 
 
-# ─── Catchment Analysis ──────────────────────────────────────────────────────
-
 @router.get("/catchment")
 def catchment_analysis(
     lat: float = Query(None),
@@ -211,7 +188,7 @@ def catchment_analysis(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = _fetch_all("facility_id,name,type,county,district,beds,cots,open_24_hours,operational_status,latitude,longitude,owner")
+    rows = _fetch_all("facility_id, name, type, county, district, beds, cots, open_24_hours, operational_status, latitude, longitude, owner")
     operational = [
         r for r in rows
         if r.get("operational_status") == "Operational"

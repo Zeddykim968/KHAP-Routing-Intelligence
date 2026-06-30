@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.services.supabase_service import supabase
+from app.services.db_service import query
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
@@ -40,23 +40,21 @@ def emergency_nearest(
     location: str = Query(None, description="Town or area name e.g. 'Thika', 'Eldoret'"),
     require_beds: bool = Query(True, description="Only return facilities with beds"),
 ):
-    """
-    Returns the single closest emergency-capable facility plus 3 alternatives.
-    Accepts either lat/lon coordinates or a plain location name.
-    """
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    response = (
-        supabase.table("facilities")
-        .select("*")
-        .eq("operational_status", "Operational")
-        .in_("type", EMERGENCY_TYPES)
-        .execute()
+    placeholders = ",".join(["%s"] * len(EMERGENCY_TYPES))
+    rows = query(
+        f"""
+        SELECT * FROM facilities
+        WHERE operational_status = 'Operational'
+          AND type IN ({placeholders})
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+        """,
+        EMERGENCY_TYPES
     )
-    facilities = [
-        f for f in response.data
-        if f.get("latitude") is not None and f.get("longitude") is not None
-    ]
+
+    facilities = list(rows)
 
     if require_beds:
         with_beds = [f for f in facilities if (f.get("beds") or 0) + (f.get("cots") or 0) > 0]

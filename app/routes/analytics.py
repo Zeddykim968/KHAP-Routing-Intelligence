@@ -1,34 +1,17 @@
 from fastapi import APIRouter, HTTPException, Path
 from collections import Counter, defaultdict
-from app.services.supabase_service import supabase
+from app.services.db_service import query
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 def _fetch_all(columns: str):
-    """Fetch ALL rows via pagination, bypassing Supabase's 1,000-row server cap."""
-    all_rows, page_size, offset = [], 1000, 0
-    while True:
-        batch = (
-            supabase.table("facilities")
-            .select(columns)
-            .range(offset, offset + page_size - 1)
-            .execute()
-            .data
-        )
-        all_rows.extend(batch)
-        if len(batch) < page_size:
-            break
-        offset += page_size
-    return all_rows
+    return query(f"SELECT {columns} FROM facilities")
 
-
-# ─── National Summary ────────────────────────────────────────────────────────
 
 @router.get("/summary")
 def get_summary():
-    """National-level overview of all 7,406 facilities."""
-    rows = _fetch_all("type,owner,beds,cots,open_24_hours,open_weekends,operational_status,county")
+    rows = _fetch_all("type, owner, beds, cots, open_24_hours, open_weekends, operational_status, county")
 
     total = len(rows)
     operational = sum(1 for r in rows if r.get("operational_status") == "Operational")
@@ -40,7 +23,6 @@ def get_summary():
     type_counts = Counter(r["type"] for r in rows if r.get("type"))
     owner_counts = Counter(r["owner"] for r in rows if r.get("owner"))
 
-    # Bucket owners into broad categories
     owner_buckets = defaultdict(int)
     for owner, count in owner_counts.items():
         o = (owner or "").lower()
@@ -69,12 +51,9 @@ def get_summary():
     }
 
 
-# ─── All Counties Ranked ─────────────────────────────────────────────────────
-
 @router.get("/counties")
 def get_county_rankings():
-    """Ranked list of all 47 counties — facility count, beds, hospitals, accessibility score."""
-    rows = _fetch_all("county,type,beds,cots,open_24_hours,operational_status")
+    rows = _fetch_all("county, type, beds, cots, open_24_hours, operational_status")
     operational = [r for r in rows if r.get("operational_status") == "Operational"]
 
     county_data = defaultdict(lambda: {
@@ -105,7 +84,6 @@ def get_county_rankings():
         if r.get("open_24_hours"):
             d["open_24h"] += 1
 
-    # Accessibility score: weighted composite (normalised within dataset)
     max_f = max((v["facilities"] for v in county_data.values()), default=1)
     max_b = max((v["beds"] for v in county_data.values()), default=1)
     max_h = max((v["hospitals"] for v in county_data.values()), default=1)
@@ -127,12 +105,9 @@ def get_county_rankings():
     return {"total_counties": len(results), "counties": results}
 
 
-# ─── County Drill-Down ───────────────────────────────────────────────────────
-
 @router.get("/county/{county_name}")
 def get_county_detail(county_name: str = Path(..., description="County name e.g. Nairobi")):
-    """Detailed breakdown for a single county."""
-    rows = _fetch_all("county,type,owner,beds,cots,open_24_hours,open_weekends,operational_status,district,name")
+    rows = _fetch_all("county, type, owner, beds, cots, open_24_hours, open_weekends, operational_status, district, name")
     county_rows = [r for r in rows if (r.get("county") or "").lower() == county_name.lower()]
 
     if not county_rows:

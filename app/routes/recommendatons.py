@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.services.supabase_service import supabase
+from app.services.db_service import query
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score, haversine
 
@@ -7,7 +7,6 @@ router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
 
 def _resolve_coords(lat, lon, location):
-    """Return (lat, lon, label) from explicit coords or a location name."""
     if lat is not None and lon is not None:
         return lat, lon, None
     if location:
@@ -24,6 +23,23 @@ def _resolve_coords(lat, lon, location):
     )
 
 
+def _build_facilities_query(operational_only, type_, county):
+    conditions = []
+    params = []
+    if operational_only:
+        conditions.append("operational_status = %s")
+        params.append("Operational")
+    if type_:
+        conditions.append("type = %s")
+        params.append(type_)
+    if county:
+        conditions.append("county = %s")
+        params.append(county)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    sql = f"SELECT * FROM facilities {where}"
+    return sql, params
+
+
 @router.get("")
 def get_recommendations(
     lat: float = Query(None, description="User's latitude"),
@@ -37,16 +53,8 @@ def get_recommendations(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    query = supabase.table("facilities").select("*")
-    if operational_only:
-        query = query.eq("operational_status", "Operational")
-    if type:
-        query = query.eq("type", type)
-    if county:
-        query = query.eq("county", county)
-
-    response = query.execute()
-    facilities = [f for f in response.data if f.get("latitude") is not None and f.get("longitude") is not None]
+    sql, params = _build_facilities_query(operational_only, type, county)
+    facilities = [f for f in query(sql, params) if f.get("latitude") is not None and f.get("longitude") is not None]
 
     if not facilities:
         raise HTTPException(status_code=404, detail="No facilities found matching the criteria")
@@ -101,16 +109,14 @@ def get_nearby(
 
 @router.get("/types")
 def get_facility_types():
-    response = supabase.table("facilities").select("type").execute()
-    types = sorted(set(f["type"] for f in response.data if f.get("type")))
-    return {"types": types}
+    rows = query("SELECT DISTINCT type FROM facilities WHERE type IS NOT NULL ORDER BY type")
+    return {"types": [r["type"] for r in rows]}
 
 
 @router.get("/counties")
 def get_counties():
-    response = supabase.table("facilities").select("county").execute()
-    counties = sorted(set(f["county"] for f in response.data if f.get("county")))
-    return {"counties": counties}
+    rows = query("SELECT DISTINCT county FROM facilities WHERE county IS NOT NULL ORDER BY county")
+    return {"counties": [r["county"] for r in rows]}
 
 
 @router.get("/list")
@@ -120,28 +126,17 @@ def list_facilities(
     operational_only: bool = Query(True),
     limit: int = Query(500, ge=1, le=2000),
 ):
-    """Returns all facilities without requiring coordinates — used for map rendering."""
-    query = supabase.table("facilities").select("*")
-    if operational_only:
-        query = query.eq("operational_status", "Operational")
-    if type:
-        query = query.eq("type", type)
-    if county:
-        query = query.eq("county", county)
-    response = query.execute()
-    facilities = [
-        f for f in response.data
-        if f.get("latitude") is not None and f.get("longitude") is not None
-    ]
+    sql, params = _build_facilities_query(operational_only, type, county)
+    facilities = [f for f in query(sql, params) if f.get("latitude") is not None and f.get("longitude") is not None]
     return {"results": facilities[:limit], "total": len(facilities)}
 
 
 @router.get("/facility/{facility_id}")
 def get_facility(facility_id: int):
-    response = supabase.table("facilities").select("*").eq("facility_id", facility_id).execute()
-    if not response.data:
+    rows = query("SELECT * FROM facilities WHERE facility_id = %s", (facility_id,))
+    if not rows:
         raise HTTPException(status_code=404, detail="Facility not found")
-    return response.data[0]
+    return rows[0]
 
 
 @router.get("/search")
@@ -150,23 +145,23 @@ def search_facilities(
     limit: int = Query(10, ge=1, le=50),
     operational_only: bool = Query(True),
 ):
-    """Full-text search by facility name or nearest town across all 7,406 facilities."""
     term = q.strip()
     pattern = f"%{term}%"
 
-    by_name = supabase.table("facilities").select("*").ilike("name", pattern)
-    by_town = supabase.table("facilities").select("*").ilike("nearest_town", pattern)
+    op_filter = "AND operational_status = 'Operational'" if operational_only else ""
 
-    if operational_only:
-        by_name = by_name.eq("operational_status", "Operational")
-        by_town = by_town.eq("operational_status", "Operational")
-
-    name_results = by_name.limit(limit).execute().data
-    town_results = by_town.limit(limit).execute().data
+    by_name = query(
+        f"SELECT * FROM facilities WHERE name ILIKE %s {op_filter} LIMIT %s",
+        (pattern, limit)
+    )
+    by_town = query(
+        f"SELECT * FROM facilities WHERE nearest_town ILIKE %s {op_filter} LIMIT %s",
+        (pattern, limit)
+    )
 
     seen_ids = set()
     merged = []
-    for f in name_results + town_results:
+    for f in by_name + by_town:
         fid = f.get("facility_id")
         if fid not in seen_ids:
             seen_ids.add(fid)
