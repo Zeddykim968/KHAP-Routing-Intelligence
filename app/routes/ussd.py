@@ -89,9 +89,12 @@ def ussd_handler(
         choice = parts[0]
         if choice == "1":
             return (
-                "CON Enter your town or area name:\n"
-                "e.g. Westlands, Kisumu, Eldoret,\n"
-                "Nakuru, Mombasa, Thika..."
+                "CON Enter your area or town:\n"
+                "Be specific for best results.\n"
+                "e.g. Westlands Nairobi\n"
+                "     Nyali Mombasa\n"
+                "     Eldoret Town\n"
+                "     Kibera Nairobi"
             )
         elif choice == "2":
             return county_page_menu(0)
