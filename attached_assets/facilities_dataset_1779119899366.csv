@@ -1,4 +1,4 @@
-﻿facility_id,facility_code,name,county,district,type,owner,nearest_town,beds,cots,open_24_hours,open_weekends,operational_status,latitude,longitude
+facility_id,facility_code,name,county,district,type,owner,nearest_town,beds,cots,open_24_hours,open_weekends,operational_status,latitude,longitude
 0,19224,CDF Kiriari Dispensary,Embu,Manyatta,Dispensary,Ministry of Health,Kiriari -market,0,0,f,f,Operational,-0.533333,37.45
 1,19310,St Jude's Huruma Community Health Services,Nairobi,Mathare,Medical Clinic,Private Practice - Unspecified,Kariobangi Market,0,0,f,f,Operational,-1.286389,36.817223
 2,14180,10 Engineer VCT,Laikipia,Laikipia East,Dispensary,Armed Forces,Nanyuki,0,0,f,f,Operational,0.366667,37.033333

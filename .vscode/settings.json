@@ -1,0 +1,30 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "CockroachDB",
+            "database": "postgres",
+            "username": "postgres",
+            "name": "db.qguucaorbevvwlelqrxp.supabase.co"
+        },
+        {
+            "pgOptions": {
+                "ssl": {
+                    "rejectUnauthorized": false
+                }
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "db.qguucaorbevvwlelqrxp.supabase.co",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "khap_database",
+            "database": "postgres",
+            "username": "postgres",
+            "password": "53ZNzX9#7)EaVNU"
+        }
+    ]
+}
