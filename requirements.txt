@@ -1,8 +1,35 @@
+# ── Core API ──────────────────────────────────────────────────────────────────
 fastapi
-uvicorn
+uvicorn[standard]
 python-dotenv
-pydantic
-numpy
-httpx
+pydantic[email]
 python-multipart
+
+# ── Supabase client ───────────────────────────────────────────────────────────
 supabase
+httpx
+
+# ── Numerical / spatial ───────────────────────────────────────────────────────
+numpy
+shapely
+geopy
+
+# ── Data / ETL ────────────────────────────────────────────────────────────────
+pandas
+
+# ── Auth (Phase 11) ───────────────────────────────────────────────────────────
+python-jose[cryptography]
+passlib[bcrypt]
+
+# ── Rate limiting & caching (Phase 5 / 11) ───────────────────────────────────
+slowapi
+cachetools
+redis
+
+# ── Database (PostGIS / direct PostgreSQL — Phase 1 / 4) ─────────────────────
+psycopg2-binary
+sqlalchemy
+
+# ── Testing (Phase 12) ────────────────────────────────────────────────────────
+pytest
+pytest-asyncio
