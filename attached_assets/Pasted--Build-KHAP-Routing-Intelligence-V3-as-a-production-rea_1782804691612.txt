@@ -1,0 +1,612 @@
+
+Build KHAP Routing Intelligence V3 as a production-ready geospatial microservice that integrates seamlessly with the Kenya Health Access Platform, providing routing, spatial analytics, healthcare accessibility intelligence, and location-based APIs.**
+
+
+# KHAP Routing Intelligence V3 Roadmap
+
+## Phase 0 — Project Foundation
+
+### Goal
+
+Create a professional development environment.
+
+### Objectives
+
+* Create GitHub repository.
+* Create project folder structure.
+* Configure VS Code workspace.
+* Connect VS Code to Supabase PostgreSQL.
+* Install PostgreSQL extensions.
+* Install PostGIS.
+* Install Redis locally (Docker or native).
+* Install Docker Desktop.
+* Configure environment variables.
+* Create documentation structure.
+* Create development and production configurations.
+
+### Deliverables
+
+* Working development environment
+* Git repository
+* Docker configuration
+* Connected PostgreSQL database
+
+---
+
+# Phase 1 — Spatial Database Development
+
+### Goal
+
+Design the central spatial database.
+
+### Objectives
+
+Build the database schemas.
+
+```
+users
+health
+gis
+routing
+analytics
+etl
+```
+
+Create all core tables.
+
+```
+roles
+
+users
+
+counties
+
+sub_counties
+
+wards
+
+services
+
+health_facilities
+
+facility_services
+
+road_network
+
+intersections
+
+saved_routes
+
+import_logs
+```
+
+Create:
+
+* Foreign keys
+* Constraints
+* Spatial indexes
+* Materialized views
+* Database functions
+* Triggers
+
+### Deliverables
+
+A production-ready PostGIS database.
+
+---
+
+# Phase 2 — Data Engineering
+
+### Goal
+
+Populate the database with verified datasets.
+
+### Objectives
+
+Integrate:
+
+* Ministry of Health Facility List
+* OpenStreetMap
+* Administrative boundaries
+* Population datasets
+
+Build ETL pipelines.
+
+Pipeline:
+
+```
+Extract
+
+↓
+
+Validate
+
+↓
+
+Clean
+
+↓
+
+Transform
+
+↓
+
+Load
+
+↓
+
+Verify
+```
+
+Store ETL metadata.
+
+Create automated import scripts.
+
+### Deliverables
+
+A fully populated healthcare GIS database.
+
+---
+
+# Phase 3 — OpenStreetMap Integration
+
+### Goal
+
+Build the routing data infrastructure.
+
+### Objectives
+
+Configure PgSnapshot.
+
+Import:
+
+* Roads
+* Buildings
+* Rivers
+* Administrative boundaries
+* Points of interest
+
+Configure JXAPI.
+
+Retrieve:
+
+* Live updates
+* OSM metadata
+* Incremental changes
+
+Synchronize local database.
+
+### Deliverables
+
+Complete Kenya road network.
+
+---
+
+# Phase 4 — Routing Engine
+
+### Goal
+
+Provide intelligent routing services.
+
+### Objectives
+
+Install OSRM.
+
+Generate routing graph.
+
+Implement:
+
+* Driving routes
+* Walking routes
+* Motorcycle routes
+* Emergency routes
+
+Calculate:
+
+* Distance
+* Travel time
+* Alternative routes
+
+### Deliverables
+
+Fully operational routing engine.
+
+---
+
+# Phase 5 — Redis Integration
+
+### Goal
+
+Improve system performance.
+
+### Objectives
+
+Deploy Redis.
+
+Cache:
+
+* Routes
+* Nearby facilities
+* Dashboard statistics
+* County summaries
+* API responses
+
+Store:
+
+* User sessions
+* Temporary calculations
+
+Implement:
+
+* Rate limiting
+* Background queues
+* Cache invalidation
+
+### Deliverables
+
+High-performance caching layer.
+
+---
+
+# Phase 6 — Backend API
+
+### Goal
+
+Develop the Routing Intelligence service.
+
+### Objectives
+
+Build FastAPI modules.
+
+```
+Authentication
+
+Facilities
+
+Routing
+
+Analytics
+
+GIS
+
+Reports
+
+Administration
+```
+
+Implement:
+
+REST API
+
+Swagger documentation
+
+Validation
+
+Authentication
+
+Pagination
+
+Filtering
+
+Error handling
+
+### Deliverables
+
+Production-ready backend API.
+
+---
+
+# Phase 7 — GIS Intelligence
+
+### Goal
+
+Enable advanced spatial analysis.
+
+### Objectives
+
+Implement:
+
+Nearest facility
+
+Buffer analysis
+
+Travel-time analysis
+
+Catchment analysis
+
+Accessibility scoring
+
+Coverage analysis
+
+Spatial joins
+
+Network analysis
+
+### Deliverables
+
+Spatial analytics engine.
+
+---
+
+# Phase 8 — Frontend
+
+### Goal
+
+Create the routing interface.
+
+### Objectives
+
+Develop:
+
+Interactive map
+
+Search
+
+Filters
+
+Facility details
+
+Route visualization
+
+Travel-time display
+
+Accessibility layers
+
+Dark/light mode
+
+Responsive layout
+
+### Deliverables
+
+Modern GIS web application.
+
+---
+
+# Phase 9 — Platform Integration
+
+### Goal
+
+Integrate with the Kenya Health Access Platform.
+
+### Objectives
+
+Expose APIs.
+
+Examples:
+
+```
+GET /nearest-facility
+
+GET /route
+
+GET /travel-time
+
+GET /coverage
+
+GET /county-analysis
+
+GET /services
+
+GET /facility
+```
+
+Allow:
+
+Appointment module
+
+Emergency module
+
+Telemedicine
+
+Facility directory
+
+to consume KHAP services.
+
+### Deliverables
+
+Independent Routing Intelligence microservice.
+
+---
+
+# Phase 10 — Analytics
+
+### Goal
+
+Generate decision-support information.
+
+### Objectives
+
+Create dashboards.
+
+Metrics:
+
+Average travel time
+
+Coverage
+
+Accessibility
+
+Facility density
+
+Population served
+
+Road coverage
+
+Emergency response
+
+County rankings
+
+### Deliverables
+
+Interactive analytics dashboards.
+
+---
+
+# Phase 11 — Security
+
+### Goal
+
+Secure the platform.
+
+### Objectives
+
+Implement:
+
+JWT
+
+Supabase Auth
+
+Role-based permissions
+
+API keys
+
+Rate limiting
+
+Audit logs
+
+Encryption
+
+### Deliverables
+
+Secure backend.
+
+---
+
+# Phase 12 — Testing
+
+### Goal
+
+Ensure reliability.
+
+### Objectives
+
+Unit tests
+
+API tests
+
+Routing tests
+
+Spatial query validation
+
+Performance tests
+
+Load tests
+
+Security tests
+
+### Deliverables
+
+Stable production system.
+
+---
+
+# Phase 13 — Deployment
+
+### Goal
+
+Deploy KHAP V3.
+
+### Objectives
+
+Deploy:
+
+Backend
+
+Redis
+
+OSRM
+
+Frontend
+
+Database migrations
+
+Configure:
+
+Docker
+
+Reverse proxy
+
+Monitoring
+
+Logging
+
+Backups
+
+CI/CD
+
+### Deliverables
+
+Live production deployment.
+
+---
+
+# Phase 14 — Documentation
+
+### Goal
+
+Make the project maintainable.
+
+### Objectives
+
+Write:
+
+Architecture documentation
+
+Database documentation
+
+API documentation
+
+Deployment guide
+
+Developer guide
+
+User guide
+
+ETL guide
+
+Routing guide
+
+### Deliverables
+
+Complete project documentation.
+
+---
+
+# Final Architecture
+
+```text
+                  Kenya Health Access Platform
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+ Patient Portal      Appointment System     Emergency Module
+        │                    │                    │
+        └────────────────────┼────────────────────┘
+                             │
+                    KHAP Routing Intelligence
+                             │
+    ┌───────────────┬─────────┼─────────┬───────────────┐
+    │               │         │         │               │
+  FastAPI       Redis      OSRM    PostgreSQL     ETL Services
+                           │        + PostGIS
+                           │
+                  PgSnapshot + JXAPI
+                           │
+                    OpenStreetMap
+```
+
+# Definition of Done (V3)
+
+Version 3 is complete when you have:
+
+* ✅ A normalized PostgreSQL/PostGIS database with documented schemas and migrations.
+* ✅ Automated ETL pipelines importing authoritative health and geospatial datasets.
+* ✅ A complete Kenya road network imported via PgSnapshot, with JXAPI handling incremental updates.
+* ✅ OSRM providing routing services.
+* ✅ Redis caching routes, nearby searches, analytics, sessions, and background jobs.
+* ✅ A FastAPI microservice exposing secure, documented routing and GIS APIs.
+* ✅ A React + MapLibre interface for interactive maps and routing.
+* ✅ Integration points that allow the wider Kenya Health Access Platform (appointments, emergency response, facility directory, etc.) to consume the Routing Intelligence APIs.
+* ✅ Automated tests, Docker-based deployment, monitoring, and comprehensive documentation.
+
+This roadmap is ordered so that each phase builds on the previous one, minimizing rework and giving you a production-oriented development process rather than a collection of disconnected features.

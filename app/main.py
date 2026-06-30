@@ -4,6 +4,8 @@ from app.routes.recommendatons import router as recommendations_router
 from app.routes.ussd import router as ussd_router
 from app.routes.sms import router as sms_router
 from app.routes.ambulance import router as ambulance_router
+from app.routes.analytics import router as analytics_router
+from app.routes.gis import router as gis_router
 
 app = FastAPI(
     title="KHAP Routing Intelligence",
@@ -28,6 +30,8 @@ app.include_router(recommendations_router)
 app.include_router(ussd_router)
 app.include_router(sms_router)
 app.include_router(ambulance_router)
+app.include_router(analytics_router)
+app.include_router(gis_router)
 
 
 @app.get("/", tags=["Meta"])
