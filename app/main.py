@@ -9,9 +9,14 @@ from app.routes.gis import router as gis_router
 from app.routes.smart_routing import router as smart_router
 
 app = FastAPI(
-    title="KHAP Routing Intelligence",
-    version="1.0",
-    description="Routing Intelligence API for the Kenya Health Access Platform — Web, USSD, and SMS.",
+    title="KHAP — Kenya Health Access Platform",
+    version="3.0",
+    description=(
+        "Routing Intelligence API for the Kenya Health Access Platform. "
+        "Maps 7,390 verified Kenyan healthcare facilities across 47 counties. "
+        "Provides emergency-type routing, insurance/financial filtering, OSRM road directions, "
+        "population monitoring, GIS coverage analysis, USSD, and SMS channels."
+    ),
 )
 
 app.add_middleware(
