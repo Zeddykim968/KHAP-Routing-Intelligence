@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all, fetch_one, search_ilike
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score, haversine
 
@@ -23,21 +23,15 @@ def _resolve_coords(lat, lon, location):
     )
 
 
-def _build_facilities_query(operational_only, type_, county):
-    conditions = []
-    params = []
+def _fetch_facilities(operational_only: bool, type_: str | None, county: str | None) -> list[dict]:
+    filters: dict = {}
     if operational_only:
-        conditions.append("operational_status = %s")
-        params.append("Operational")
+        filters["operational_status"] = "Operational"
     if type_:
-        conditions.append("type = %s")
-        params.append(type_)
+        filters["type"] = type_
     if county:
-        conditions.append("county = %s")
-        params.append(county)
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    sql = f"SELECT * FROM facilities {where}"
-    return sql, params
+        filters["county"] = county
+    return [f for f in fetch_all(filters=filters) if f.get("latitude") is not None and f.get("longitude") is not None]
 
 
 @router.get("")
@@ -52,9 +46,7 @@ def get_recommendations(
     operational_only: bool = Query(True, description="Only return operational facilities"),
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
-
-    sql, params = _build_facilities_query(operational_only, type, county)
-    facilities = [f for f in query(sql, params) if f.get("latitude") is not None and f.get("longitude") is not None]
+    facilities = _fetch_facilities(operational_only, type, county)
 
     if not facilities:
         raise HTTPException(status_code=404, detail="No facilities found matching the criteria")
@@ -99,7 +91,7 @@ def get_nearby(
     radius_km: float = Query(20, description="Search radius in km"),
     limit: int = Query(5, ge=1, le=20),
 ):
-    lat, lon, resolved_label = _resolve_coords(lat, lon, location)
+    lat, lon, _ = _resolve_coords(lat, lon, location)
     return get_recommendations(
         lat=lat, lon=lon, location=None,
         limit=limit, type=None, county=None,
@@ -109,14 +101,16 @@ def get_nearby(
 
 @router.get("/types")
 def get_facility_types():
-    rows = query("SELECT DISTINCT type FROM facilities WHERE type IS NOT NULL ORDER BY type")
-    return {"types": [r["type"] for r in rows]}
+    rows = fetch_all(columns="type")
+    types = sorted(set(r["type"] for r in rows if r.get("type")))
+    return {"types": types}
 
 
 @router.get("/counties")
 def get_counties():
-    rows = query("SELECT DISTINCT county FROM facilities WHERE county IS NOT NULL ORDER BY county")
-    return {"counties": [r["county"] for r in rows]}
+    rows = fetch_all(columns="county")
+    counties = sorted(set(r["county"] for r in rows if r.get("county")))
+    return {"counties": counties}
 
 
 @router.get("/list")
@@ -126,17 +120,16 @@ def list_facilities(
     operational_only: bool = Query(True),
     limit: int = Query(500, ge=1, le=2000),
 ):
-    sql, params = _build_facilities_query(operational_only, type, county)
-    facilities = [f for f in query(sql, params) if f.get("latitude") is not None and f.get("longitude") is not None]
+    facilities = _fetch_facilities(operational_only, type, county)
     return {"results": facilities[:limit], "total": len(facilities)}
 
 
 @router.get("/facility/{facility_id}")
 def get_facility(facility_id: int):
-    rows = query("SELECT * FROM facilities WHERE facility_id = %s", (facility_id,))
-    if not rows:
+    facility = fetch_one(facility_id)
+    if not facility:
         raise HTTPException(status_code=404, detail="Facility not found")
-    return rows[0]
+    return facility
 
 
 @router.get("/search")
@@ -146,20 +139,10 @@ def search_facilities(
     operational_only: bool = Query(True),
 ):
     term = q.strip()
-    pattern = f"%{term}%"
+    by_name = search_ilike("name", term, operational_only=operational_only, limit=limit)
+    by_town = search_ilike("nearest_town", term, operational_only=operational_only, limit=limit)
 
-    op_filter = "AND operational_status = 'Operational'" if operational_only else ""
-
-    by_name = query(
-        f"SELECT * FROM facilities WHERE name ILIKE %s {op_filter} LIMIT %s",
-        (pattern, limit)
-    )
-    by_town = query(
-        f"SELECT * FROM facilities WHERE nearest_town ILIKE %s {op_filter} LIMIT %s",
-        (pattern, limit)
-    )
-
-    seen_ids = set()
+    seen_ids: set = set()
     merged = []
     for f in by_name + by_town:
         fid = f.get("facility_id")

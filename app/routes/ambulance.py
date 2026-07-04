@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
 router = APIRouter(prefix="/ambulance", tags=["Emergency"])
 
-EMERGENCY_TYPES = [
+EMERGENCY_TYPES = {
     "District Hospital",
     "Provincial General Hospital",
     "Sub-District Hospital",
@@ -13,7 +13,7 @@ EMERGENCY_TYPES = [
     "Medical Centre",
     "Health Centre",
     "National Referral Hospital",
-]
+}
 
 
 def _resolve_coords(lat, lon, location):
@@ -42,19 +42,13 @@ def emergency_nearest(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    placeholders = ",".join(["%s"] * len(EMERGENCY_TYPES))
-    rows = query(
-        f"""
-        SELECT * FROM facilities
-        WHERE operational_status = 'Operational'
-          AND type IN ({placeholders})
-          AND latitude IS NOT NULL
-          AND longitude IS NOT NULL
-        """,
-        EMERGENCY_TYPES
-    )
-
-    facilities = list(rows)
+    rows = fetch_all(filters={"operational_status": "Operational"})
+    facilities = [
+        f for f in rows
+        if f.get("type") in EMERGENCY_TYPES
+        and f.get("latitude") is not None
+        and f.get("longitude") is not None
+    ]
 
     if require_beds:
         with_beds = [f for f in facilities if (f.get("beds") or 0) + (f.get("cots") or 0) > 0]

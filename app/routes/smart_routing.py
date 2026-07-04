@@ -4,7 +4,7 @@ Smart routing — emergency-aware, insurance-aware, road-routed recommendations.
 
 import httpx
 from fastapi import APIRouter, Query, HTTPException
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all
 from app.services.location_service import resolve_location
 from app.services.enrichment import (
     enrich_facility, emergency_type_score,
@@ -63,19 +63,20 @@ def smart_recommend(
     optional insurance/financial-level filters.
 
     Scoring weights:
-      - Distance     30 %
+      - Distance       30 %
       - Emergency match 35 %
-      - Availability 20 %
-      - Capacity     15 %
+      - Availability   20 %
+      - Capacity       15 %
     """
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
     cfg = EMERGENCY_CAPABILITIES.get(emergency_type, EMERGENCY_CAPABILITIES["general"])
 
-    rows = query("SELECT * FROM facilities WHERE operational_status = 'Operational' AND latitude IS NOT NULL AND longitude IS NOT NULL")
+    rows = fetch_all(filters={"operational_status": "Operational"})
+    facilities = [f for f in rows if f.get("latitude") is not None and f.get("longitude") is not None]
 
     results = []
-    for f in rows:
+    for f in facilities:
         dist = haversine(lat, lon, f["latitude"], f["longitude"])
         if dist > radius_km:
             continue
@@ -83,9 +84,8 @@ def smart_recommend(
         enrich_facility(f)
 
         # Insurance filter
-        if insurance:
-            if insurance not in f["insurance_providers"]:
-                continue
+        if insurance and insurance not in f["insurance_providers"]:
+            continue
 
         # Financial level filter
         if financial_level and financial_level.lower() not in ("any", ""):
@@ -110,17 +110,17 @@ def smart_recommend(
             0.20 * avail_score
         )
 
-        road_km  = round(dist * 1.35, 2)
-        est_min  = round((road_km / AVG_SPEED_KMH) * 60)
+        road_km = round(dist * 1.35, 2)
+        est_min = round((road_km / AVG_SPEED_KMH) * 60)
 
         results.append({
             **f,
-            "distance_km":          round(dist, 2),
-            "estimated_road_km":    road_km,
-            "estimated_minutes":    est_min,
-            "score":                round(composite, 2),
+            "distance_km":           round(dist, 2),
+            "estimated_road_km":     road_km,
+            "estimated_minutes":     est_min,
+            "score":                 round(composite, 2),
             "emergency_match_score": round(emerg_score, 1),
-            "match_reason":         _match_reason(f, emergency_type, cfg),
+            "match_reason":          _match_reason(f, emergency_type, cfg),
         })
 
     if not results:
@@ -161,9 +161,7 @@ def _match_reason(facility: dict, emergency_type: str, cfg: dict) -> str:
         reasons.append("Open weekends")
 
     beds = (facility.get("beds") or 0) + (facility.get("cots") or 0)
-    if beds >= 50:
-        reasons.append(f"{beds} beds/cots")
-    elif beds > 0:
+    if beds > 0:
         reasons.append(f"{beds} beds/cots")
 
     ins = facility.get("insurance_providers", [])
@@ -188,7 +186,7 @@ def road_route(
 ):
     """
     Returns a real road route geometry using the OSRM public demo server.
-    Falls back to straight-line estimate if OSRM is unavailable.
+    Falls back to a straight-line estimate if OSRM is unavailable.
     """
     try:
         url = (
@@ -214,7 +212,6 @@ def road_route(
     except Exception:
         pass
 
-    # Straight-line fallback
     dist = haversine(from_lat, from_lon, to_lat, to_lon)
     road_km = round(dist * 1.35, 2)
     return {
@@ -243,17 +240,11 @@ def population_served(
     """
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = query(
-        """
-        SELECT name, type, county, district, operational_status, latitude, longitude,
-               beds, cots, open_24_hours
-        FROM facilities
-        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-        """
-    )
+    rows = fetch_all(columns="name,type,county,district,operational_status,latitude,longitude,beds,cots,open_24_hours")
+    all_facilities = [r for r in rows if r.get("latitude") is not None and r.get("longitude") is not None]
 
     within = []
-    for r in rows:
+    for r in all_facilities:
         d = haversine(lat, lon, r["latitude"], r["longitude"])
         if d <= radius_km:
             within.append({**r, "distance_km": round(d, 2)})

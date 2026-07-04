@@ -1,17 +1,13 @@
 from fastapi import APIRouter, HTTPException, Path
 from collections import Counter, defaultdict
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
-def _fetch_all(columns: str):
-    return query(f"SELECT {columns} FROM facilities")
-
-
 @router.get("/summary")
 def get_summary():
-    rows = _fetch_all("type, owner, beds, cots, open_24_hours, open_weekends, operational_status, county")
+    rows = fetch_all(columns="type,owner,beds,cots,open_24_hours,open_weekends,operational_status,county")
 
     total = len(rows)
     operational = sum(1 for r in rows if r.get("operational_status") == "Operational")
@@ -23,7 +19,7 @@ def get_summary():
     type_counts = Counter(r["type"] for r in rows if r.get("type"))
     owner_counts = Counter(r["owner"] for r in rows if r.get("owner"))
 
-    owner_buckets = defaultdict(int)
+    owner_buckets: defaultdict = defaultdict(int)
     for owner, count in owner_counts.items():
         o = (owner or "").lower()
         if "ministry" in o or "government" in o or "county" in o:
@@ -53,10 +49,10 @@ def get_summary():
 
 @router.get("/counties")
 def get_county_rankings():
-    rows = _fetch_all("county, type, beds, cots, open_24_hours, operational_status")
+    rows = fetch_all(columns="county,type,beds,cots,open_24_hours,operational_status")
     operational = [r for r in rows if r.get("operational_status") == "Operational"]
 
-    county_data = defaultdict(lambda: {
+    county_data: defaultdict = defaultdict(lambda: {
         "facilities": 0, "beds": 0, "hospitals": 0,
         "health_centres": 0, "dispensaries": 0, "open_24h": 0,
     })
@@ -107,13 +103,20 @@ def get_county_rankings():
 
 @router.get("/county/{county_name}")
 def get_county_detail(county_name: str = Path(..., description="County name e.g. Nairobi")):
-    rows = _fetch_all("county, type, owner, beds, cots, open_24_hours, open_weekends, operational_status, district, name")
-    county_rows = [r for r in rows if (r.get("county") or "").lower() == county_name.lower()]
+    rows = fetch_all(
+        columns="county,type,owner,beds,cots,open_24_hours,open_weekends,operational_status,district,name",
+        filters={"county": county_name},
+    )
 
-    if not county_rows:
+    if not rows:
+        # Try case-insensitive fallback
+        all_rows = fetch_all(columns="county,type,owner,beds,cots,open_24_hours,open_weekends,operational_status,district,name")
+        rows = [r for r in all_rows if (r.get("county") or "").lower() == county_name.lower()]
+
+    if not rows:
         raise HTTPException(status_code=404, detail=f"County '{county_name}' not found.")
 
-    operational = [r for r in county_rows if r.get("operational_status") == "Operational"]
+    operational = [r for r in rows if r.get("operational_status") == "Operational"]
     total_beds = sum((r.get("beds") or 0) + (r.get("cots") or 0) for r in operational)
     open_24h = [r for r in operational if r.get("open_24_hours")]
     open_wknd = [r for r in operational if r.get("open_weekends")]
@@ -125,8 +128,8 @@ def get_county_detail(county_name: str = Path(..., description="County name e.g.
     highest_bed = max(operational, key=lambda r: (r.get("beds") or 0), default=None)
 
     return {
-        "county": county_rows[0]["county"],
-        "total_facilities": len(county_rows),
+        "county": rows[0]["county"],
+        "total_facilities": len(rows),
         "operational": len(operational),
         "total_beds_and_cots": total_beds,
         "open_24h_count": len(open_24h),

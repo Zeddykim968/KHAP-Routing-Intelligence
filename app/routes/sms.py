@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body
 from pydantic import BaseModel
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all
 from app.recommendation_engine import calculate_score
 
 router = APIRouter(prefix="/sms", tags=["SMS"])
@@ -44,26 +44,24 @@ def handle_sms(payload: SMSRequest = Body(...)):
         facility_type = None
 
         type_map = {
-            "HOSPITAL": "District Hospital",
-            "CLINIC": "Medical Clinic",
+            "HOSPITAL":   "District Hospital",
+            "CLINIC":     "Medical Clinic",
             "DISPENSARY": "Dispensary",
-            "MATERNITY": "Maternity Home",
-            "DENTAL": "Dental Clinic",
-            "CENTRE": "Health Centre",
-            "CENTER": "Health Centre",
-            "LAB": "Laboratory (Stand-alone)",
+            "MATERNITY":  "Maternity Home",
+            "DENTAL":     "Dental Clinic",
+            "CENTRE":     "Health Centre",
+            "CENTER":     "Health Centre",
+            "LAB":        "Laboratory (Stand-alone)",
         }
 
         if len(parts) >= 3:
             facility_type = type_map.get(parts[2].upper())
 
-        sql = "SELECT * FROM facilities WHERE operational_status = 'Operational' AND county = %s"
-        params = [county]
+        filters: dict = {"operational_status": "Operational", "county": county}
         if facility_type:
-            sql += " AND type = %s"
-            params.append(facility_type)
+            filters["type"] = facility_type
 
-        facilities = query(sql, params)
+        facilities = fetch_all(filters=filters)
 
         if not facilities:
             return {"response": f"No facilities found in {county}. Check spelling and try again."}

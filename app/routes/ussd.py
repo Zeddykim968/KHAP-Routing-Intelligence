@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Form
 from fastapi.responses import PlainTextResponse
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
@@ -122,13 +122,12 @@ def ussd_handler(
         service_choice = parts[2]
         facility_type = SERVICE_TYPE_MAP.get(service_choice)
 
-        sql = "SELECT * FROM facilities WHERE operational_status = 'Operational'"
-        params = []
+        filters: dict = {"operational_status": "Operational"}
         if facility_type:
-            sql += " AND type = %s"
-            params.append(facility_type)
+            filters["type"] = facility_type
 
-        facilities = [f for f in query(sql, params) if f.get("latitude") and f.get("longitude")]
+        rows = fetch_all(filters=filters)
+        facilities = [f for f in rows if f.get("latitude") and f.get("longitude")]
 
         scored = []
         for f in facilities:
@@ -172,13 +171,11 @@ def ussd_handler(
         service_choice = parts[2]
         facility_type = SERVICE_TYPE_MAP.get(service_choice)
 
-        sql = "SELECT name, nearest_town, type FROM facilities WHERE operational_status = 'Operational' AND county = %s"
-        params = [county]
+        filters = {"operational_status": "Operational", "county": county}
         if facility_type:
-            sql += " AND type = %s"
-            params.append(facility_type)
+            filters["type"] = facility_type
 
-        facilities = query(sql, params)
+        facilities = fetch_all(columns="name,nearest_town,type", filters=filters)
 
         if not facilities:
             return f"END No facilities found in {county}.\nTry a different service type."

@@ -1,16 +1,12 @@
 from fastapi import APIRouter, Query, HTTPException
 from collections import Counter, defaultdict
-from app.services.db_service import query
+from app.services.supabase_service import fetch_all
 from app.services.location_service import resolve_location
 from app.recommendation_engine import haversine
 
 router = APIRouter(prefix="/gis", tags=["GIS Intelligence"])
 
 AVG_SPEED_KMH = 40
-
-
-def _fetch_all(columns: str):
-    return query(f"SELECT {columns} FROM facilities")
 
 
 def _resolve_coords(lat, lon, location):
@@ -39,12 +35,11 @@ def coverage_analysis(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = _fetch_all("latitude, longitude, type, owner, beds, cots, open_24_hours, operational_status, name, county")
-    operational = [
-        r for r in rows
-        if r.get("operational_status") == "Operational"
-        and r.get("latitude") and r.get("longitude")
-    ]
+    rows = fetch_all(
+        columns="latitude,longitude,type,owner,beds,cots,open_24_hours,operational_status,name,county",
+        filters={"operational_status": "Operational"},
+    )
+    operational = [r for r in rows if r.get("latitude") and r.get("longitude")]
 
     within = []
     for r in operational:
@@ -56,7 +51,7 @@ def coverage_analysis(
 
     type_counts = dict(Counter(r["type"] for r in within if r.get("type")).most_common())
 
-    owner_buckets = defaultdict(int)
+    owner_buckets: defaultdict = defaultdict(int)
     for r in within:
         o = (r.get("owner") or "").lower()
         if "ministry" in o or "county" in o:
@@ -128,14 +123,13 @@ def accessibility_score(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = _fetch_all("latitude, longitude, type, beds, cots, open_24_hours, operational_status")
-    operational = [
-        r for r in rows
-        if r.get("operational_status") == "Operational"
-        and r.get("latitude") and r.get("longitude")
-    ]
+    rows = fetch_all(
+        columns="latitude,longitude,type,beds,cots,open_24_hours,operational_status",
+        filters={"operational_status": "Operational"},
+    )
+    operational = [r for r in rows if r.get("latitude") and r.get("longitude")]
 
-    bands = {"5km": [], "15km": [], "50km": []}
+    bands: dict = {"5km": [], "15km": [], "50km": []}
     for r in operational:
         d = haversine(lat, lon, r["latitude"], r["longitude"])
         if d <= 5:
@@ -188,15 +182,15 @@ def catchment_analysis(
 ):
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = _fetch_all("facility_id, name, type, county, district, beds, cots, open_24_hours, operational_status, latitude, longitude, owner")
-    operational = [
-        r for r in rows
-        if r.get("operational_status") == "Operational"
-        and r.get("latitude") and r.get("longitude")
-    ]
-
+    filters: dict = {"operational_status": "Operational"}
     if facility_type:
-        operational = [r for r in operational if (r.get("type") or "").lower() == facility_type.lower()]
+        filters["type"] = facility_type
+
+    rows = fetch_all(
+        columns="facility_id,name,type,county,district,beds,cots,open_24_hours,operational_status,latitude,longitude,owner",
+        filters=filters,
+    )
+    operational = [r for r in rows if r.get("latitude") and r.get("longitude")]
 
     results = []
     for r in operational:
