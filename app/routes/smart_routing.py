@@ -16,6 +16,78 @@ router = APIRouter(prefix="/smart", tags=["Smart Routing"])
 
 AVG_SPEED_KMH = 40
 
+# ─── Turn-by-turn helpers ─────────────────────────────────────────────────────
+
+_MANEUVER_TEXT = {
+    ("depart",     "left"):        "Head left on",
+    ("depart",     "right"):       "Head right on",
+    ("depart",     "straight"):    "Head straight on",
+    ("depart",     ""):            "Depart on",
+    ("turn",       "left"):        "Turn left onto",
+    ("turn",       "right"):       "Turn right onto",
+    ("turn",       "sharp left"):  "Take a sharp left onto",
+    ("turn",       "sharp right"): "Take a sharp right onto",
+    ("turn",       "slight left"): "Keep slight left onto",
+    ("turn",       "slight right"):"Keep slight right onto",
+    ("turn",       "uturn"):       "Make a U-turn",
+    ("continue",   "straight"):    "Continue straight on",
+    ("continue",   "left"):        "Keep left on",
+    ("continue",   "right"):       "Keep right on",
+    ("fork",       "left"):        "Take the left fork onto",
+    ("fork",       "right"):       "Take the right fork onto",
+    ("merge",      "left"):        "Merge left onto",
+    ("merge",      "right"):       "Merge right onto",
+    ("roundabout", ""):            "Take the roundabout onto",
+    ("rotary",     ""):            "Take the rotary onto",
+    ("arrive",     ""):            "Arrive at your destination",
+    ("arrive",     "left"):        "Arrive at destination on the left",
+    ("arrive",     "right"):       "Arrive at destination on the right",
+    ("arrive",     "straight"):    "Arrive at destination",
+}
+
+_STEP_ICONS = {
+    "depart":     {"": "▶", "left": "↖", "right": "↗", "straight": "↑"},
+    "turn":       {"left": "←", "right": "→", "sharp left": "↙", "sharp right": "↘", "slight left": "↖", "slight right": "↗", "uturn": "↩"},
+    "continue":   {"straight": "↑", "left": "←", "right": "→"},
+    "fork":       {"left": "↖", "right": "↗"},
+    "merge":      {"left": "←", "right": "→"},
+    "roundabout": {"": "⟳"},
+    "rotary":     {"": "⟳"},
+    "arrive":     {"": "🏥", "left": "🏥", "right": "🏥", "straight": "🏥"},
+}
+
+
+def _parse_osrm_steps(osrm_steps: list) -> list[dict]:
+    steps = []
+    for s in osrm_steps:
+        m = s.get("maneuver", {})
+        mtype = m.get("type", "")
+        modifier = m.get("modifier", "")
+        name = (s.get("name") or "").strip()
+        dist_km = round(s.get("distance", 0) / 1000, 2)
+        dur_min = round(s.get("duration", 0) / 60, 1)
+
+        text = (
+            _MANEUVER_TEXT.get((mtype, modifier))
+            or _MANEUVER_TEXT.get((mtype, ""))
+            or "Continue on"
+        )
+        instruction = f"{text} {name}".strip() if name else text
+
+        icon_map = _STEP_ICONS.get(mtype, {})
+        icon = icon_map.get(modifier) or icon_map.get("") or "↑"
+
+        steps.append({
+            "instruction": instruction,
+            "distance_km": dist_km,
+            "duration_min": dur_min,
+            "type": mtype,
+            "modifier": modifier,
+            "icon": icon,
+            "name": name,
+        })
+    return steps
+
 
 def _resolve_coords(lat, lon, location):
     if lat is not None and lon is not None:
@@ -49,27 +121,16 @@ def list_insurance_providers():
 
 @router.get("/recommend")
 def smart_recommend(
-    lat: float = Query(None, description="User latitude"),
-    lon: float = Query(None, description="User longitude"),
-    location: str = Query(None, description="Town / area name e.g. 'Westlands'"),
-    emergency_type: str = Query("general", description="Emergency type id e.g. cardiac, trauma, maternity"),
-    insurance: str = Query(None, description="Insurance provider e.g. NHIF, AAR, Jubilee"),
-    financial_level: str = Query(None, description="Financial tier: Low / Medium / High / Free/Subsidized / Any"),
-    radius_km: float = Query(50, ge=1, le=300, description="Search radius km"),
+    lat: float = Query(None),
+    lon: float = Query(None),
+    location: str = Query(None),
+    emergency_type: str = Query("general"),
+    insurance: str = Query(None),
+    financial_level: str = Query(None),
+    radius_km: float = Query(50, ge=1, le=300),
     limit: int = Query(10, ge=1, le=30),
 ):
-    """
-    Returns ranked hospitals/clinics for the given emergency type and
-    optional insurance/financial-level filters.
-
-    Scoring weights:
-      - Distance       30 %
-      - Emergency match 35 %
-      - Availability   20 %
-      - Capacity       15 %
-    """
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
-
     cfg = EMERGENCY_CAPABILITIES.get(emergency_type, EMERGENCY_CAPABILITIES["general"])
 
     rows = fetch_all(filters={"operational_status": "Operational"})
@@ -83,16 +144,12 @@ def smart_recommend(
 
         enrich_facility(f)
 
-        # Insurance filter
         if insurance and insurance not in f["insurance_providers"]:
             continue
-
-        # Financial level filter
         if financial_level and financial_level.lower() not in ("any", ""):
             if f["financial_level"].lower() != financial_level.lower():
                 continue
 
-        # Scoring
         dist_score  = max(0, 100 - (dist / radius_km) * 100)
         emerg_score = emergency_type_score(f, emergency_type)
         beds        = (f.get("beds") or 0) + (f.get("cots") or 0)
@@ -127,11 +184,10 @@ def smart_recommend(
         raise HTTPException(
             404,
             f"No facilities found within {radius_km}km matching your criteria. "
-            "Try widening the radius or removing insurance/financial filters."
+            "Try widening the radius or removing filters."
         )
 
     results.sort(key=lambda x: x["score"], reverse=True)
-
     return {
         "query": {
             "location": resolved_label or {"latitude": lat, "longitude": lon},
@@ -151,7 +207,7 @@ def _match_reason(facility: dict, emergency_type: str, cfg: dict) -> str:
     preferred = cfg.get("preferred_types") or []
 
     if preferred and ftype == preferred[0]:
-        reasons.append(f"Best facility type for {cfg['label']}")
+        reasons.append(f"Best match for {cfg['label']}")
     elif preferred and ftype in preferred:
         reasons.append(f"Suitable for {cfg['label']}")
 
@@ -175,7 +231,7 @@ def _match_reason(facility: dict, emergency_type: str, cfg: dict) -> str:
     return " · ".join(reasons) if reasons else "General facility"
 
 
-# ─── Road Routing (OSRM) ─────────────────────────────────────────────────────
+# ─── Road Routing (OSRM) with turn-by-turn ───────────────────────────────────
 
 @router.get("/road-route")
 def road_route(
@@ -185,7 +241,7 @@ def road_route(
     to_lon: float = Query(...),
 ):
     """
-    Returns a real road route geometry using the OSRM public demo server.
+    Real road route using the OSRM public demo server with full turn-by-turn steps.
     Falls back to a straight-line estimate if OSRM is unavailable.
     """
     try:
@@ -195,52 +251,107 @@ def road_route(
         )
         resp = httpx.get(
             url,
-            params={"overview": "full", "geometries": "geojson", "steps": "false"},
-            timeout=8,
+            params={
+                "overview": "full",
+                "geometries": "geojson",
+                "steps": "true",
+                "annotations": "false",
+            },
+            timeout=10,
             headers={"User-Agent": "KHAP-Routing/1.0"},
         )
         if resp.status_code == 200:
             data = resp.json()
-            if data.get("routes"):
+            if data.get("code") == "Ok" and data.get("routes"):
                 r = data["routes"][0]
+                legs = r.get("legs", [{}])
+                steps = _parse_osrm_steps(legs[0].get("steps", []) if legs else [])
                 return {
                     "source": "osrm",
                     "distance_km": round(r["distance"] / 1000, 2),
                     "duration_minutes": round(r["duration"] / 60),
                     "geometry": r["geometry"],
+                    "steps": steps,
                 }
     except Exception:
         pass
 
     dist = haversine(from_lat, from_lon, to_lat, to_lon)
     road_km = round(dist * 1.35, 2)
+    dur_min = round((road_km / AVG_SPEED_KMH) * 60)
     return {
         "source": "estimate",
         "distance_km": road_km,
-        "duration_minutes": round((road_km / AVG_SPEED_KMH) * 60),
+        "duration_minutes": dur_min,
         "geometry": {
             "type": "LineString",
             "coordinates": [[from_lon, from_lat], [to_lon, to_lat]],
         },
+        "steps": [
+            {"instruction": f"Estimated road route ({road_km} km)", "distance_km": road_km, "duration_min": dur_min, "type": "depart", "icon": "↑", "name": ""},
+            {"instruction": "Arrive at your destination", "distance_km": 0, "duration_min": 0, "type": "arrive", "icon": "🏥", "name": ""},
+        ],
     }
+
+
+@router.get("/nearest")
+def nearest_facility(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    emergency_type: str = Query("general"),
+    limit: int = Query(1, ge=1, le=5),
+):
+    """Find the nearest facility and return its road route in one call."""
+    cfg = EMERGENCY_CAPABILITIES.get(emergency_type, EMERGENCY_CAPABILITIES["general"])
+    preferred = cfg.get("preferred_types")
+
+    rows = fetch_all(filters={"operational_status": "Operational"})
+    candidates = [
+        f for f in rows
+        if f.get("latitude") is not None and f.get("longitude") is not None
+        and (not preferred or f.get("type") in preferred)
+    ]
+
+    if not candidates:
+        candidates = [f for f in rows if f.get("latitude") is not None and f.get("longitude") is not None]
+
+    if not candidates:
+        raise HTTPException(404, "No facilities found.")
+
+    scored = sorted(
+        candidates,
+        key=lambda f: haversine(lat, lon, f["latitude"], f["longitude"])
+    )[:limit]
+
+    results = []
+    for f in scored[:limit]:
+        dist = haversine(lat, lon, f["latitude"], f["longitude"])
+        road_km = round(dist * 1.35, 2)
+        enrich_facility(f)
+        results.append({
+            **f,
+            "distance_km": round(dist, 2),
+            "estimated_road_km": road_km,
+            "estimated_minutes": round((road_km / AVG_SPEED_KMH) * 60),
+        })
+
+    return {"results": results, "total": len(results)}
 
 
 # ─── Population Served ────────────────────────────────────────────────────────
 
 @router.get("/population-served")
 def population_served(
-    lat: float = Query(None, description="Facility latitude"),
-    lon: float = Query(None, description="Facility longitude"),
-    location: str = Query(None, description="Facility location name"),
-    radius_km: float = Query(10, ge=1, le=100, description="Catchment radius km"),
+    lat: float = Query(None),
+    lon: float = Query(None),
+    location: str = Query(None),
+    radius_km: float = Query(10, ge=1, le=100),
 ):
-    """
-    Estimates the catchment population and competing facilities around a point.
-    Uses Kenya average population density (~100 persons/km²) as a baseline.
-    """
     lat, lon, resolved_label = _resolve_coords(lat, lon, location)
 
-    rows = fetch_all(columns="name,type,county,district,operational_status,latitude,longitude,beds,cots,open_24_hours")
+    rows = fetch_all(
+        columns="name,type,county,district,operational_status,latitude,longitude,beds,cots,open_24_hours"
+    )
     all_facilities = [r for r in rows if r.get("latitude") is not None and r.get("longitude") is not None]
 
     within = []
@@ -255,12 +366,10 @@ def population_served(
     est_population = round(area_km2 * 100)
 
     operational = [f for f in within if f.get("operational_status") == "Operational"]
-    total_capacity = sum(
-        (f.get("beds") or 0) + (f.get("cots") or 0) for f in operational
-    )
+    total_capacity = sum((f.get("beds") or 0) + (f.get("cots") or 0) for f in operational)
 
     if operational:
-        beds_per_1000 = round((total_capacity / est_population) * 1000, 2)
+        beds_per_1000 = round((total_capacity / est_population) * 1000, 2) if est_population else 0
         people_per_facility = round(est_population / len(operational))
     else:
         beds_per_1000 = 0

@@ -7,6 +7,7 @@ from app.routes.ambulance import router as ambulance_router
 from app.routes.analytics import router as analytics_router
 from app.routes.gis import router as gis_router
 from app.routes.smart_routing import router as smart_router
+from app.routes.api import router as api_router
 
 app = FastAPI(
     title="KHAP — Kenya Health Access Platform",
@@ -34,13 +35,14 @@ app.include_router(ambulance_router)
 app.include_router(analytics_router)
 app.include_router(gis_router)
 app.include_router(smart_router)
+app.include_router(api_router)
 
 
 @app.get("/", tags=["Meta"])
 def root():
     return {
         "service": "KHAP Routing Intelligence",
-        "version": "1.0",
+        "version": "3.0",
         "status": "operational",
         "channels": ["web", "ussd", "sms"],
         "docs": "/docs",
