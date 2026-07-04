@@ -6,7 +6,7 @@ export async function fetchFacilities({ county, type } = {}) {
   const p = new URLSearchParams();
   if (county) p.set("county", county);
   if (type) p.set("type", type);
-  p.set("limit", "500");
+  p.set("limit", "2000");
   const res = await fetch(`${BASE}/recommendations/list?${p}`);
   if (!res.ok) throw new Error("Failed to fetch facilities");
   return res.json();
@@ -26,6 +26,14 @@ export async function fetchFacilityTypes() {
   return data.types;
 }
 
+export async function suggestFacilities(q, limit = 8) {
+  if (!q || q.trim().length < 1) return { suggestions: [] };
+  const p = new URLSearchParams({ q: q.trim(), limit });
+  const res = await fetch(`${BASE}/recommendations/suggest?${p}`);
+  if (!res.ok) return { suggestions: [] };
+  return res.json();
+}
+
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
 export async function fetchAccessibilityScores() {
@@ -36,6 +44,9 @@ export async function fetchAccessibilityScores() {
     counties: (data.counties || []).map((c) => ({
       county: c.county,
       score: c.accessibility_score,
+      facilities: c.facilities,
+      beds: c.beds,
+      rank: c.rank,
       band:
         c.accessibility_score >= 70 ? "Excellent"
         : c.accessibility_score >= 45 ? "Good"
@@ -45,8 +56,8 @@ export async function fetchAccessibilityScores() {
   };
 }
 
-export async function fetchCoverage(lat, lon) {
-  const p = new URLSearchParams({ lat, lon });
+export async function fetchCoverage(lat, lon, radius = 10) {
+  const p = new URLSearchParams({ lat, lon, radius_km: radius });
   const res = await fetch(`${BASE}/gis/coverage?${p}`);
   if (!res.ok) throw new Error("Failed to fetch coverage");
   const data = await res.json();
@@ -54,7 +65,6 @@ export async function fetchCoverage(lat, lon) {
     ...data,
     access_message: `${data.total_facilities} facilities within ${data.radius_km} km`,
     access_status: data.total_facilities >= 5 ? "adequate" : "inadequate",
-    coverage_bands: { within_10km: { count: data.total_facilities } },
   };
 }
 
@@ -127,6 +137,13 @@ export async function fetchRoadRoute(fromLat, fromLon, toLat, toLon) {
   return res.json();
 }
 
+export async function fetchNearestFacility(lat, lon, emergencyType = "general") {
+  const p = new URLSearchParams({ lat, lon, emergency_type: emergencyType, limit: 3 });
+  const res = await fetch(`${BASE}/smart/nearest?${p}`);
+  if (!res.ok) throw new Error("Failed to find nearest facility");
+  return res.json();
+}
+
 export async function fetchPopulationServed(lat, lon, radiusKm = 10) {
   const p = new URLSearchParams({ lat, lon, radius_km: radiusKm });
   const res = await fetch(`${BASE}/smart/population-served?${p}`);
@@ -134,17 +151,23 @@ export async function fetchPopulationServed(lat, lon, radiusKm = 10) {
   return res.json();
 }
 
-// ── Travel-time (legacy) ──────────────────────────────────────────────────────
-
-export async function fetchRoute(fromLat, fromLon, toLat, toLon) {
-  return fetchRoadRoute(fromLat, fromLon, toLat, toLon).then((data) => ({
-    ...data,
-    distance_km: data.distance_km,
-    duration_minutes: data.duration_minutes,
-  }));
+export async function fetchCountyCentroids() {
+  const res = await fetch(`${BASE}/api/counties/centroids`);
+  if (!res.ok) return { counties: [] };
+  return res.json();
 }
 
-// ── Emergency zones (legacy sidebar compat) ───────────────────────────────────
+export async function fetchPlatformStats() {
+  const res = await fetch(`${BASE}/api/stats`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Legacy aliases ────────────────────────────────────────────────────────────
+
+export async function fetchRoute(fromLat, fromLon, toLat, toLon) {
+  return fetchRoadRoute(fromLat, fromLon, toLat, toLon);
+}
 
 export async function fetchEmergencyZones(lat, lon) {
   const p = new URLSearchParams({ lat, lon, radius_km: 50 });
@@ -164,7 +187,5 @@ export async function fetchEmergencyZones(lat, lon) {
 }
 
 export async function fetchFacilityStats() {
-  const res = await fetch(`${BASE}/analytics/summary`);
-  if (!res.ok) throw new Error("Failed to fetch stats");
-  return res.json();
+  return fetchNationalSummary();
 }

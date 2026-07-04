@@ -132,6 +132,29 @@ def get_facility(facility_id: int):
     return facility
 
 
+@router.get("/suggest")
+def suggest_facilities(
+    q: str = Query(..., min_length=1, description="Partial search term for autocomplete"),
+    limit: int = Query(8, ge=1, le=20),
+):
+    term = q.strip()
+    rows = search_ilike("name", term, operational_only=False, limit=limit)
+    return {
+        "suggestions": [
+            {
+                "facility_id": f.get("facility_id"),
+                "name": f.get("name"),
+                "type": f.get("type"),
+                "county": f.get("county"),
+                "operational_status": f.get("operational_status"),
+                "latitude": f.get("latitude"),
+                "longitude": f.get("longitude"),
+            }
+            for f in rows
+        ]
+    }
+
+
 @router.get("/search")
 def search_facilities(
     q: str = Query(..., min_length=2, description="Search term — facility name or town"),
