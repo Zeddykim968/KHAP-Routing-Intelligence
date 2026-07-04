@@ -5,11 +5,14 @@ python-dotenv
 pydantic[email]
 python-multipart
 
-# ── Supabase client ───────────────────────────────────────────────────────────
-supabase
+# ── HTTP client (OSRM road routing) ───────────────────────────────────────────
 httpx
 
-# ── Numerical / spatial ───────────────────────────────────────────────────────
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary
+sqlalchemy
+
+# ── Spatial / numerical ───────────────────────────────────────────────────────
 numpy
 shapely
 geopy
@@ -17,35 +20,14 @@ geopy
 # ── Data / ETL ────────────────────────────────────────────────────────────────
 pandas
 
-# ── Auth (Phase 11) ───────────────────────────────────────────────────────────
+# ── Auth (Phase 11 — not yet active) ─────────────────────────────────────────
 python-jose[cryptography]
 passlib[bcrypt]
 
-# ── Rate limiting & caching (Phase 5 / 11) ───────────────────────────────────
+# ── Rate limiting / caching (Phase 12 — not yet active) ──────────────────────
 slowapi
 cachetools
-redis
 
-# ── Database (PostGIS / direct PostgreSQL — Phase 1 / 4) ─────────────────────
-psycopg2-binary
-sqlalchemy
-
-# ── Testing (Phase 12) ────────────────────────────────────────────────────────
+# ── Testing (Phase 13 — not yet active) ──────────────────────────────────────
 pytest
 pytest-asyncio
-cachetools
-fastapi
-geopy
-httpx
-numpy
-pandas
-passlib[bcrypt]
-psycopg2-binary
-pydantic[email]
-python-dotenv
-python-jose[cryptography]
-python-multipart
-shapely
-slowapi
-sqlalchemy
-uvicorn[standard]
