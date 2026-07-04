@@ -1,6 +1,6 @@
 import re
 import httpx
-from app.services.db_service import query
+from app.services.supabase_service import search_ilike
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 HEADERS = {"User-Agent": "KHAP-Routing-Intelligence/1.0 (kenya-health-access.replit.app)"}
@@ -78,26 +78,15 @@ def _geocode_nominatim(name: str) -> dict | None:
 
 
 def _geocode_database(name: str) -> dict | None:
+    """Fall back to Supabase facilities table when Nominatim returns nothing."""
     term = name.strip()
-    pattern = f"%{term}%"
-
     for column in ("nearest_town", "district", "county"):
-        rows = query(
-            f"""
-            SELECT latitude, longitude, {column}
-            FROM facilities
-            WHERE {column} ILIKE %s
-              AND operational_status = 'Operational'
-              AND latitude IS NOT NULL
-              AND longitude IS NOT NULL
-            LIMIT 1
-            """,
-            (pattern,)
-        )
+        rows = search_ilike(column, term, operational_only=True, limit=1)
         if rows:
             row = rows[0]
-            lat, lon = row["latitude"], row["longitude"]
-            if _in_kenya(lat, lon):
+            lat = row.get("latitude")
+            lon = row.get("longitude")
+            if lat is not None and lon is not None and _in_kenya(lat, lon):
                 return {
                     "latitude":  lat,
                     "longitude": lon,
