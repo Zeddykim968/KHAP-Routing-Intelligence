@@ -5,19 +5,16 @@ python-dotenv
 pydantic[email]
 python-multipart
 
-# ── HTTP client (OSRM road routing) ───────────────────────────────────────────
+# ── Supabase (sole database) ───────────────────────────────────────────────────
+supabase
 httpx
-
-# ── Database ──────────────────────────────────────────────────────────────────
-psycopg2-binary
-sqlalchemy
 
 # ── Spatial / numerical ───────────────────────────────────────────────────────
 numpy
 shapely
 geopy
 
-# ── Data / ETL ────────────────────────────────────────────────────────────────
+# ── Data ──────────────────────────────────────────────────────────────────────
 pandas
 
 # ── Auth (Phase 11 — not yet active) ─────────────────────────────────────────
