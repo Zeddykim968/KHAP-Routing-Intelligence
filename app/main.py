@@ -1,3 +1,4 @@
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.recommendatons import router as recommendations_router
@@ -8,6 +9,8 @@ from app.routes.analytics import router as analytics_router
 from app.routes.gis import router as gis_router
 from app.routes.smart_routing import router as smart_router
 from app.routes.api import router as api_router
+
+_START_TIME = time.time()
 
 app = FastAPI(
     title="KHAP — Kenya Health Access Platform",
@@ -51,4 +54,56 @@ def root():
 
 @app.get("/health", tags=["Meta"])
 def health():
-    return {"status": "ok"}
+    from app.services.supabase_service import supabase
+
+    checks: dict = {}
+    overall = "healthy"
+
+    # ── Supabase: row count + response time ──────────────────────────────────
+    try:
+        t0 = time.time()
+        r = supabase.table("facilities").select("facility_id", count="exact").limit(1).execute()
+        db_ms = round((time.time() - t0) * 1000)
+        total = r.count or 0
+        checks["database"] = {
+            "status":        "ok",
+            "total_facilities": total,
+            "response_ms":   db_ms,
+            "note": "ok" if total >= 7000 else "⚠️ row count lower than expected",
+        }
+        if total < 7000:
+            overall = "degraded"
+    except Exception as exc:
+        checks["database"] = {"status": "error", "detail": str(exc)}
+        overall = "unhealthy"
+
+    # ── Operational subset ────────────────────────────────────────────────────
+    try:
+        r2 = (
+            supabase.table("facilities")
+            .select("facility_id", count="exact")
+            .eq("operational_status", "Operational")
+            .limit(1)
+            .execute()
+        )
+        checks["database"]["operational_facilities"] = r2.count or 0
+    except Exception:
+        pass
+
+    # ── Uptime ────────────────────────────────────────────────────────────────
+    elapsed = int(time.time() - _START_TIME)
+    h, rem  = divmod(elapsed, 3600)
+    m, s    = divmod(rem, 60)
+
+    return {
+        "status":  overall,
+        "version": "3.0",
+        "uptime":  f"{h}h {m}m {s}s",
+        "uptime_seconds": elapsed,
+        "checks":  checks,
+        "channels": {
+            "web":  "https://kenya-health-access.vercel.app",
+            "ussd": "*384*43149#",
+            "sms":  "/sms",
+        },
+    }
