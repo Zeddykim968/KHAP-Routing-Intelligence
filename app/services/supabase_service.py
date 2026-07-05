@@ -6,7 +6,11 @@ Uses the service role key to bypass Row Level Security on the facilities table.
 import os
 from supabase import create_client, Client
 
-_SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+_raw_url = os.getenv("SUPABASE_URL", "")
+# The stored secret sometimes has a trailing /rest/v1/ path — strip it so the
+# Supabase client can construct all URLs correctly.
+_SUPABASE_URL = _raw_url.replace("/rest/v1", "").rstrip("/")
+
 _SUPABASE_KEY = (
     os.getenv("SUPABASE_SERVICE_KEY")
     or os.getenv("SUPABASE_KEY", "")
@@ -14,8 +18,9 @@ _SUPABASE_KEY = (
 
 if not _SUPABASE_URL or not _SUPABASE_KEY:
     raise RuntimeError(
-        "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in Replit Secrets. "
-        "See ReadMe.md → Environment Variables."
+        "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in Replit Secrets.\n"
+        "SUPABASE_URL  → Project Settings → API → Project URL\n"
+        "SUPABASE_SERVICE_KEY → Project Settings → API → service_role secret"
     )
 
 supabase: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
