@@ -139,6 +139,7 @@ export default function App() {
           accessibilityScores={accessibilityScores}
           theme={theme}
           smartResults={activeLayer === "emergency" && smartResultFacilities.length > 0}
+          loading={loading}
         />
       </div>
     </div>

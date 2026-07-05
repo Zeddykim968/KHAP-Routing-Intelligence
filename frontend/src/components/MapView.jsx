@@ -128,7 +128,7 @@ function FitRoute({ coords }) {
 export default function MapView({
   facilities, userLocation, selectedFacility,
   onFacilitySelect, route, activeLayer,
-  accessibilityScores, theme, smartResults,
+  accessibilityScores, theme, smartResults, loading,
 }) {
   const routeCoords = route?.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]);
   const destination = route?.destination;
@@ -136,6 +136,46 @@ export default function MapView({
 
   return (
     <div style={{ flex: 1, position: "relative" }}>
+
+      {/* ── Loading overlay ── */}
+      {loading && facilities.length === 0 && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 2000,
+          background: dark ? "rgba(9,15,23,0.82)" : "rgba(240,244,248,0.82)",
+          backdropFilter: "blur(3px)",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 16,
+        }}>
+          <style>{`
+            @keyframes khap-spin { to { transform: rotate(360deg); } }
+            @keyframes khap-pulse { 0%,100% { opacity:.4; transform:scale(.92); } 50% { opacity:1; transform:scale(1); } }
+          `}</style>
+
+          {/* Spinner ring */}
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            border: `4px solid ${dark ? "#1f2937" : "#e5e7eb"}`,
+            borderTopColor: "#10b981",
+            animation: "khap-spin 0.9s linear infinite",
+          }} />
+
+          {/* Pulsing label */}
+          <div style={{
+            color: "#10b981", fontWeight: 700, fontSize: 15,
+            letterSpacing: "0.04em",
+            animation: "khap-pulse 1.8s ease-in-out infinite",
+          }}>
+            Loading facilities…
+          </div>
+
+          <div style={{
+            color: dark ? "#6b7280" : "#9ca3af",
+            fontSize: 12, textAlign: "center", maxWidth: 220,
+          }}>
+            Fetching 7,406 verified<br />Kenyan health facilities
+          </div>
+        </div>
+      )}
       <MapContainer
         center={[-0.0236, 37.9062]}
         zoom={6}
