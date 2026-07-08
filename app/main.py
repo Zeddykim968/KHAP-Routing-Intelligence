@@ -32,7 +32,7 @@ app.add_middleware(
         "https://*.vercel.app",
         "http://localhost:3000",
         "http://localhost:8000",
-        "http://localhost:5173",
+        "http://localhost:5174",
         "*",
     ],
     allow_credentials=True,
