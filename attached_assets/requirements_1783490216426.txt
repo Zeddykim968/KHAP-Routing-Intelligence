@@ -1,0 +1,30 @@
+# Core Django
+Django>=4.2,<5.0
+djangorestframework>=3.14.0
+
+# Database
+psycopg2-binary>=2.9.0  # PostgreSQL adapter
+django-contrib-postgres  # PostgreSQL specific features
+
+# Caching
+redis>=5.0.0
+django-redis>=5.4.0
+
+# Background Tasks
+celery>=5.3.0
+django-celery-beat>=2.5.0  # Periodic tasks
+
+# API & CORS
+django-filter>=23.0
+django-cors-headers>=4.3.0
+drf-spectacular>=0.27.0  # OpenAPI/Swagger documentation
+
+# Utilities
+python-dotenv>=1.0.0
+pillow>=10.0.0  # Image processing
+
+# External Services
+africastalking>=1.2.0
+
+# Development
+pyngrok>=7.0.0

@@ -190,4 +190,4 @@ def ussd_handler(
             lines.append(f"...and {len(facilities) - 5} more.")
         return "\n".join(lines)
 
-    return "END Session ended.\nDial *384*43149# to start again."
+    return "END Session ended.\nDial *384# to start again."

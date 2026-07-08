@@ -13,19 +13,28 @@ from app.routes.api import router as api_router
 _START_TIME = time.time()
 
 app = FastAPI(
-    title="KHAP — Kenya Health Access Platform",
+    title="KHAP Routing Intelligence",
     version="3.0",
     description=(
-        "Routing Intelligence API for the Kenya Health Access Platform. "
-        "Maps 7,390 verified Kenyan healthcare facilities across 47 counties. "
-        "Provides emergency-type routing, insurance/financial filtering, OSRM road directions, "
-        "population monitoring, GIS coverage analysis, USSD, and SMS channels."
+        "Routing Intelligence microservice for the Kenya Health Access Platform (KHAP). "
+        "Powers facility finding, smart emergency routing, and GIS analytics for the main "
+        "Django platform at kenya-health-access.vercel.app. "
+        "Serves 7,406 verified MoH facilities across Kenya's 47 counties via REST API, "
+        "Africa's Talking USSD (*384*43149#), and SMS webhooks. "
+        "See /health for live platform status."
     ),
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://kenya-health-access.vercel.app",
+        "https://*.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://localhost:5173",
+        "*",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
