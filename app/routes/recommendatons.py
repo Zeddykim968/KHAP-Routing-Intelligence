@@ -118,10 +118,11 @@ def list_facilities(
     county: str = Query(None, description="Filter by county"),
     type: str = Query(None, description="Filter by facility type"),
     operational_only: bool = Query(True),
-    limit: int = Query(500, ge=1, le=2000),
+    limit: int = Query(None, ge=1, description="Max results to return; omit to return all"),
 ):
     facilities = _fetch_facilities(operational_only, type, county)
-    return {"results": facilities[:limit], "total": len(facilities)}
+    results = facilities[:limit] if limit else facilities
+    return {"results": results, "total": len(facilities)}
 
 
 @router.get("/facility/{facility_id}")

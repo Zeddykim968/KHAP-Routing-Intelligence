@@ -6,7 +6,6 @@ export async function fetchFacilities({ county, type } = {}) {
   const p = new URLSearchParams();
   if (county) p.set("county", county);
   if (type) p.set("type", type);
-  p.set("limit", "2000");
   const res = await fetch(`${BASE}/recommendations/list?${p}`);
   if (!res.ok) throw new Error("Failed to fetch facilities");
   return res.json();
