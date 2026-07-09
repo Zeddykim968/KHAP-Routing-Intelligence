@@ -1,2 +1,3 @@
 - [KHAP Supabase table name](khap-supabase-table.md) — the facilities table is `public.facilities`; never `health_facilities` even if code says otherwise.
 - [KHAP frontend port config](khap-frontend-port.md) — dashboard dev port must match in both vite.config.js and package.json's `dev` script, or the workflow fails to bind.
+- [MapLibre GL + headless screenshots](khap-maplibre-webgl.md) — the app_preview screenshot tool's headless browser has no WebGL; MapLibre throws there but works fine in real browsers.

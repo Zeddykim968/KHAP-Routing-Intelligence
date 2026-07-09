@@ -155,6 +155,29 @@ def suggest_facilities(
     }
 
 
+@router.get("/geocode")
+def geocode(
+    q: str = Query(..., min_length=2, description="Free-text place name — road, landmark, estate, town"),
+):
+    """
+    Real geocoding for arbitrary place names (roads, landmarks, bus stops) —
+    not limited to the facilities dataset. Backed by Nominatim (OpenStreetMap),
+    scoped to Kenya, with a facilities-table fallback for local landmarks.
+    Returns a single best-match pin, or null if nothing was found.
+    """
+    resolved = resolve_location(q.strip())
+    if not resolved:
+        return {"result": None}
+    return {
+        "result": {
+            "label": resolved["label"],
+            "latitude": resolved["latitude"],
+            "longitude": resolved["longitude"],
+            "source": "geocode",
+        }
+    }
+
+
 @router.get("/search")
 def search_facilities(
     q: str = Query(..., min_length=2, description="Search term — facility name or town"),

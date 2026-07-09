@@ -1,10 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
-import {
-  MapContainer, TileLayer, Marker, Popup,
-  Polyline, Circle, useMap,
-} from "react-leaflet";
-import MarkerClusterGroup from "react-leaflet-cluster";
-import L from "leaflet";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 const FACILITY_COLORS = {
   "District Hospital":           "#ef4444",
@@ -33,136 +29,74 @@ const FIN_COLORS = {
   "Free/Subsidized": "#10b981", Low: "#3b82f6", Medium: "#f59e0b", High: "#ef4444",
 };
 
-const DARK_TILE      = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const LIGHT_TILE     = "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png";
-const LABEL_TILE     = "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png";
-const SATELLITE_TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+// ── Base map styles ──────────────────────────────────────────────────────────
+// OpenFreeMap: free vector-tile styles, no API key, no per-request billing.
+const VECTOR_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+const SATELLITE_TILE    = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-// ── Cluster icon ─────────────────────────────────────────────────────────────
+// A CSS filter "dark mode" trick: OpenFreeMap ships light vector styles only
+// (liberty/positron/bright) — there's no free hosted dark vector style, so we
+// invert + hue-rotate the canvas instead of drawing our own dark theme.
+const DARK_FILTER = "invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.85)";
 
-function createClusterIcon(cluster) {
-  const count = cluster.getChildCount();
-  const size  = count < 10 ? 28 : count < 100 ? 34 : 42;
-  const color = count < 10 ? "#10b981" : count < 100 ? "#3b82f6" : "#ef4444";
-  return L.divIcon({
-    html: `<div style="
-      width:${size}px;height:${size}px;border-radius:50%;
-      background:${color};
-      display:flex;align-items:center;justify-content:center;
-      color:#fff;font-weight:700;font-size:${size < 34 ? 11 : 13}px;
-      border:2.5px solid rgba(255,255,255,0.85);
-      box-shadow:0 2px 10px rgba(0,0,0,0.35);
-    ">${count}</div>`,
-    className: "",
-    iconSize: L.point(size, size, true),
-  });
+function buildMatchExpr(colorMap) {
+  const expr = ["match", ["get", "type"]];
+  for (const [k, v] of Object.entries(colorMap)) {
+    if (k === "default") continue;
+    expr.push(k, v);
+  }
+  expr.push(colorMap.default);
+  return expr;
 }
 
-// ── Marker icons ─────────────────────────────────────────────────────────────
-
-function makeIcon(color, size = 10, ring = false, pulse = false) {
-  const pulseStyle = pulse
-    ? `animation:pulse 1.5s ease-in-out infinite;`
-    : "";
-  const border = ring
-    ? `border:3px solid ${color};background:transparent;box-shadow:0 0 10px ${color}99`
-    : `background:${color};border:2px solid rgba(255,255,255,0.75);box-shadow:0 1px 5px rgba(0,0,0,0.4)`;
-  return L.divIcon({
-    className: "",
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;${border};${pulseStyle}"></div>`,
-    iconAnchor: [size / 2, size / 2],
-  });
+function facilitiesToGeoJSON(facilities, selectedFacility, smartResults) {
+  return {
+    type: "FeatureCollection",
+    features: facilities
+      .filter((f) => f.latitude && f.longitude)
+      .map((f) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [f.longitude, f.latitude] },
+        properties: {
+          ...f,
+          selected: selectedFacility?.facility_id === f.facility_id,
+          isTop: !!(smartResults && f.score != null && f.score >= 65),
+        },
+      })),
+  };
 }
 
-function userIcon() {
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="position:relative;width:20px;height:20px">
-        <div style="position:absolute;inset:0;border-radius:50%;background:rgba(59,130,246,0.25);animation:ripple 2s ease-out infinite"></div>
-        <div style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 12px rgba(59,130,246,0.8)"></div>
+function lineGeoJSON(coords) {
+  return {
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: coords },
+    properties: {},
+  };
+}
+
+function facilityPopupHTML(f) {
+  const beds    = (f.beds || 0) + (f.cots || 0);
+  const fl      = f.financial_level;
+  const flColor = FIN_COLORS[fl] || "#6b7280";
+  return `
+    <div style="min-width:200px;font-family:system-ui,sans-serif">
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${f.name || ""}</div>
+      <div style="color:#6b7280;font-size:11px;margin-bottom:6px">
+        ${f.type || ""} · ${f.county || ""} County${f.nearest_town ? ` · ${f.nearest_town}` : ""}
       </div>
-      <style>
-        @keyframes ripple{0%{transform:scale(1);opacity:0.7}100%{transform:scale(2.5);opacity:0}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
-      </style>
-    `,
-    iconAnchor: [10, 10],
-  });
-}
-
-function destinationIcon(name) {
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="text-align:center">
-        <div style="font-size:24px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.6))">🏥</div>
-        ${name ? `<div style="background:rgba(0,0,0,0.75);color:#fff;font-size:9px;padding:2px 4px;border-radius:3px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${name}</div>` : ""}
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">
+        <span style="background:${f.operational_status === "Operational" ? "#d1fae5" : "#fee2e2"};color:${f.operational_status === "Operational" ? "#065f46" : "#991b1b"};border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600">
+          ${f.operational_status || "Unknown"}
+        </span>
+        ${f.open_24_hours ? `<span style="background:#dbeafe;color:#1e40af;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600">🕐 24hrs</span>` : ""}
+        ${f.open_weekends ? `<span style="background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600">📅 Wknds</span>` : ""}
       </div>
-    `,
-    iconAnchor: [12, 28],
-  });
-}
-
-function stepDotIcon(active) {
-  const color = active ? "#f59e0b" : "#94a3b8";
-  const size  = active ? 14 : 8;
-  return L.divIcon({
-    className: "",
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}88;${active ? "animation:pulse 1.2s ease-in-out infinite;" : ""}"></div>`,
-    iconAnchor: [size / 2, size / 2],
-  });
-}
-
-// ── Map helpers ───────────────────────────────────────────────────────────────
-
-function FlyTo({ target }) {
-  const map = useMap();
-  useEffect(() => {
-    if (target) map.flyTo(target, 14, { duration: 1.2 });
-  }, [JSON.stringify(target)]);
-  return null;
-}
-
-function FlyToUser({ userLocation }) {
-  const map = useMap();
-  useEffect(() => {
-    if (userLocation) map.setView([userLocation.lat, userLocation.lon], 9);
-  }, []);
-  return null;
-}
-
-function FitRoute({ coords }) {
-  const map = useMap();
-  useEffect(() => {
-    if (coords?.length >= 2) {
-      map.fitBounds(L.latLngBounds(coords), { padding: [60, 60], animate: true });
-    }
-  }, [coords?.length]);
-  return null;
-}
-
-// ── Animated directional route polyline ──────────────────────────────────────
-// Animates strokeDashoffset via requestAnimationFrame for a flowing "traffic" feel.
-
-function AnimatedPolyline({ positions, pathOptions, speed = 0.4 }) {
-  const ref    = useRef(null);
-  const rafRef = useRef(null);
-  const offset = useRef(0);
-
-  useEffect(() => {
-    const tick = () => {
-      if (ref.current?._path) {
-        offset.current = (offset.current - speed) % 20;
-        ref.current._path.style.strokeDashoffset = offset.current;
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [speed]);
-
-  return <Polyline ref={ref} positions={positions} pathOptions={pathOptions} />;
+      ${beds > 0 ? `<div style="font-size:11px;margin-bottom:3px">🛏 <strong>${beds}</strong> beds/cots</div>` : ""}
+      ${f.distance_km != null ? `<div style="font-size:11px;margin-bottom:3px">📍 <strong>${f.distance_km} km</strong>${f.estimated_minutes != null ? ` · ⏱ ${f.estimated_minutes} min` : ""}</div>` : ""}
+      ${fl ? `<div style="font-size:11px;margin-bottom:3px">💰 <span style="color:${flColor};font-weight:600">${fl} cost</span></div>` : ""}
+      ${f.score != null ? `<div style="font-size:11px;color:#10b981;font-weight:600;margin-top:4px">⭐ Match: ${f.score}/100${f.match_reason ? `<div style="color:#9ca3af;font-weight:400;font-style:italic;font-size:10px">${f.match_reason}</div>` : ""}</div>` : ""}
+    </div>
+  `;
 }
 
 // ── Main MapView ──────────────────────────────────────────────────────────────
@@ -173,30 +107,401 @@ export default function MapView({
   activeLayer, accessibilityScores, theme, smartResults, loading,
   activeStepIdx,
 }) {
-  const [tileMode, setTileMode] = useState(theme); // "dark" | "light" | "satellite"
+  const containerRef = useRef(null);
+  const mapRef        = useRef(null);
+  const styleReady     = useRef(false);
+  const userMarkerRef  = useRef(null);
+  const destMarkerRef  = useRef(null);
+  const stepMarkersRef = useRef([]);
+  const dashOffsetRef  = useRef(0);
+  const rafRef         = useRef(null);
+  const popupRef       = useRef(null);
+  const facilitiesRef  = useRef(facilities);
+  const onSelectRef    = useRef(onFacilitySelect);
 
-  // Sync tileMode when theme changes (unless user picked satellite)
+  const [tileMode, setTileMode] = useState(theme); // "dark" | "light" | "satellite"
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapFailed, setMapFailed] = useState(false);
+
+  facilitiesRef.current = facilities;
+  onSelectRef.current = onFacilitySelect;
+
   useEffect(() => {
-    setTileMode((prev) => prev === "satellite" ? "satellite" : theme);
+    setTileMode((prev) => (prev === "satellite" ? "satellite" : theme));
   }, [theme]);
 
-  const routeCoords = route?.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]);
-  const altRoutes   = (route?.routes || []).slice(1);           // alternate routes
-  const destination = route?.destination;
-  const steps       = route?.steps || [];
-  const dark        = theme === "dark";
-  const isSat       = tileMode === "satellite";
+  const dark  = theme === "dark";
+  const isSat = tileMode === "satellite";
 
   const nextTile = () =>
-    setTileMode((m) => m === "dark" ? "light" : m === "light" ? "satellite" : "dark");
-
+    setTileMode((m) => (m === "dark" ? "light" : m === "light" ? "satellite" : "dark"));
   const tileModeLabel = { dark: "🌙", light: "☀️", satellite: "🛰" };
+
+  // ── Init map (once) ──────────────────────────────────────────────────────
+  useEffect(() => {
+    let map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: VECTOR_STYLE_URL,
+        center: [37.9062, -0.0236],
+        zoom: 6,
+        attributionControl: true,
+      });
+    } catch (err) {
+      console.error("MapLibre init failed:", err);
+      setMapFailed(true);
+      return;
+    }
+    map.on("error", (e) => {
+      if (e?.error?.message?.includes("WebGL") || e?.error?.type === "webglcontextcreationerror") {
+        console.error("MapLibre WebGL error:", e.error);
+        setMapFailed(true);
+      }
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
+
+    map.on("load", () => {
+      styleReady.current = true;
+
+      // Satellite raster source, hidden by default — toggled via tileMode
+      map.addSource("satellite-src", {
+        type: "raster",
+        tiles: [SATELLITE_TILE],
+        tileSize: 256,
+        attribution: "&copy; Esri — Esri, Maxar, GeoEye, Earthstar Geographics",
+      });
+      map.addLayer({
+        id: "satellite-layer",
+        type: "raster",
+        source: "satellite-src",
+        layout: { visibility: "none" },
+      }, map.getStyle().layers[0]?.id);
+
+      // Facilities cluster source
+      map.addSource("facilities-src", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 13,
+      });
+
+      map.addLayer({
+        id: "clusters",
+        type: "circle",
+        source: "facilities-src",
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": [
+            "step", ["get", "point_count"],
+            "#10b981", 10, "#3b82f6", 100, "#ef4444",
+          ],
+          "circle-radius": ["step", ["get", "point_count"], 14, 10, 17, 100, 21],
+          "circle-stroke-width": 2.5,
+          "circle-stroke-color": "rgba(255,255,255,0.85)",
+          "circle-opacity": 0.92,
+        },
+      });
+      map.addLayer({
+        id: "cluster-count",
+        type: "symbol",
+        source: "facilities-src",
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-font": ["Noto Sans Bold"],
+          "text-size": 12,
+        },
+        paint: { "text-color": "#ffffff" },
+      });
+      map.addLayer({
+        id: "facility-points",
+        type: "circle",
+        source: "facilities-src",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": buildMatchExpr(FACILITY_COLORS),
+          "circle-radius": [
+            "case",
+            ["get", "selected"], 11,
+            ["get", "isTop"], 8,
+            5,
+          ],
+          "circle-stroke-width": ["case", ["get", "isTop"], 2.5, 1.5],
+          "circle-stroke-color": "rgba(255,255,255,0.8)",
+        },
+      });
+
+      map.on("click", "clusters", (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: ["clusters"] });
+        const clusterId = features[0].properties.cluster_id;
+        map.getSource("facilities-src").getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err) return;
+          map.easeTo({ center: features[0].geometry.coordinates, zoom });
+        });
+      });
+      map.on("click", "facility-points", (e) => {
+        const f = e.features[0].properties;
+        onSelectRef.current?.(f);
+        new maplibregl.Popup({ closeButton: true, maxWidth: "260px" })
+          .setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(facilityPopupHTML(f))
+          .addTo(map);
+      });
+      map.on("mouseenter", "facility-points", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "facility-points", () => (map.getCanvas().style.cursor = ""));
+      map.on("mouseenter", "clusters", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "clusters", () => (map.getCanvas().style.cursor = ""));
+
+      // Route sources/layers
+      const emptyLine = { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} };
+      map.addSource("alt-routes-src", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "alt-routes-layer", type: "line", source: "alt-routes-src",
+        paint: { "line-color": dark ? "#4b5563" : "#9ca3af", "line-width": 4, "line-opacity": 0.55, "line-dasharray": [2, 1.6] },
+      });
+
+      map.addSource("route-casing-src", { type: "geojson", data: emptyLine });
+      map.addLayer({
+        id: "route-casing", type: "line", source: "route-casing-src",
+        paint: { "line-color": dark ? "#1e3a5f" : "#1d4ed8", "line-width": 9, "line-opacity": 0.35 },
+      });
+      map.addSource("route-core-src", { type: "geojson", data: emptyLine });
+      map.addLayer({
+        id: "route-core", type: "line", source: "route-core-src",
+        paint: { "line-color": "#60a5fa", "line-width": 4, "line-opacity": 1 },
+      });
+      map.addSource("route-flow-src", { type: "geojson", data: emptyLine });
+      map.addLayer({
+        id: "route-flow", type: "line", source: "route-flow-src",
+        paint: { "line-color": "#93c5fd", "line-width": 3, "line-opacity": 0.9, "line-dasharray": [1.2, 1.6] },
+      });
+
+      setMapLoaded(true);
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      styleReady.current = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Animate "flowing" dashes on the route (traffic-direction feel) ───────
+  // MapLibre doesn't expose a strokeDashoffset like SVG, so we fake motion by
+  // cycling the dash pattern itself — a small, cheap "marching ants" effect.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    const pattern = [
+      [0, 1.2, 1.6], [0.4, 1.2, 1.2], [0.8, 1.2, 0.8], [1.2, 1.2, 0.4],
+    ];
+    let i = 0;
+    const id = setInterval(() => {
+      if (!map.getLayer("route-flow")) return;
+      const [lead, dash, gap] = pattern[i % pattern.length];
+      try { map.setPaintProperty("route-flow", "line-dasharray", [dash, gap]); } catch (_) {}
+      i++;
+    }, 220);
+    return () => clearInterval(id);
+  }, [mapLoaded]);
+
+  // ── Tile mode: vector base vs satellite raster, plus dark CSS filter ─────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    const baseLayers = map.getStyle().layers
+      .filter((l) => l.id !== "satellite-layer");
+
+    if (isSat) {
+      map.setLayoutProperty("satellite-layer", "visibility", "visible");
+      baseLayers.forEach((l) => {
+        if (l.type !== "background") {
+          try { map.setLayoutProperty(l.id, "visibility", "none"); } catch (_) {}
+        }
+      });
+    } else {
+      map.setLayoutProperty("satellite-layer", "visibility", "none");
+      baseLayers.forEach((l) => {
+        try { map.setLayoutProperty(l.id, "visibility", "visible"); } catch (_) {}
+      });
+    }
+
+    const canvas = map.getCanvasContainer();
+    canvas.style.filter = !isSat && dark ? DARK_FILTER : "none";
+  }, [isSat, dark, mapLoaded]);
+
+  // ── Update facilities source ──────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    const src = map.getSource("facilities-src");
+    if (src) src.setData(facilitiesToGeoJSON(facilities, selectedFacility, smartResults));
+  }, [facilities, selectedFacility, smartResults, mapLoaded]);
+
+  // ── User location marker + fly-to on first fix ────────────────────────────
+  const flownToUser = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !userLocation) return;
+
+    if (!userMarkerRef.current) {
+      const el = document.createElement("div");
+      el.style.width = "20px";
+      el.style.height = "20px";
+      el.innerHTML = `
+        <div style="position:relative;width:20px;height:20px">
+          <div style="position:absolute;inset:0;border-radius:50%;background:rgba(59,130,246,0.25);animation:khap-ripple 2s ease-out infinite"></div>
+          <div style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 12px rgba(59,130,246,0.8)"></div>
+        </div>`;
+      userMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([userLocation.lon, userLocation.lat])
+        .addTo(map);
+    } else {
+      userMarkerRef.current.setLngLat([userLocation.lon, userLocation.lat]);
+    }
+
+    if (!flownToUser.current) {
+      flownToUser.current = true;
+      map.jumpTo({ center: [userLocation.lon, userLocation.lat], zoom: 9 });
+    }
+  }, [userLocation, mapLoaded]);
+
+  // ── Fly to selected facility ───────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !selectedFacility?.latitude || route) return;
+    map.flyTo({ center: [selectedFacility.longitude, selectedFacility.latitude], zoom: 14, duration: 1200 });
+  }, [selectedFacility, mapLoaded, route]);
+
+  // ── Route rendering ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    const routeCoords = route?.geometry?.coordinates;
+    const altRoutes    = (route?.routes || []).slice(1);
+    const destination  = route?.destination;
+    const steps        = route?.steps || [];
+
+    map.getSource("alt-routes-src")?.setData({
+      type: "FeatureCollection",
+      features: altRoutes
+        .filter((a) => a.geometry?.coordinates?.length)
+        .map((a) => lineGeoJSON(a.geometry.coordinates)),
+    });
+
+    if (routeCoords?.length) {
+      const line = lineGeoJSON(routeCoords);
+      map.getSource("route-casing-src")?.setData(line);
+      map.getSource("route-core-src")?.setData(line);
+      map.getSource("route-flow-src")?.setData(line);
+
+      const bounds = routeCoords.reduce(
+        (b, c) => b.extend(c),
+        new maplibregl.LngLatBounds(routeCoords[0], routeCoords[0])
+      );
+      map.fitBounds(bounds, { padding: 60, duration: 800 });
+    } else {
+      const empty = { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} };
+      map.getSource("route-casing-src")?.setData(empty);
+      map.getSource("route-core-src")?.setData(empty);
+      map.getSource("route-flow-src")?.setData(empty);
+    }
+
+    // Destination marker
+    if (destMarkerRef.current) { destMarkerRef.current.remove(); destMarkerRef.current = null; }
+    if (destination?.latitude) {
+      const el = document.createElement("div");
+      el.style.textAlign = "center";
+      el.innerHTML = `
+        <div style="font-size:24px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.6))">🏥</div>
+        ${destination.name ? `<div style="background:rgba(0,0,0,0.75);color:#fff;font-size:9px;padding:2px 4px;border-radius:3px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${destination.name}</div>` : ""}
+      `;
+      destMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([destination.longitude, destination.latitude])
+        .addTo(map);
+    }
+
+    // Step dot markers
+    stepMarkersRef.current.forEach((m) => m.remove());
+    stepMarkersRef.current = steps
+      .map((step, i) => {
+        if (!step.location || step.type === "depart" || step.type === "arrive") return null;
+        const active = i === activeStepIdx;
+        const size = active ? 14 : 8;
+        const color = active ? "#f59e0b" : "#94a3b8";
+        const el = document.createElement("div");
+        el.style.width = `${size}px`;
+        el.style.height = `${size}px`;
+        el.style.borderRadius = "50%";
+        el.style.background = color;
+        el.style.border = "2px solid #fff";
+        el.style.boxShadow = `0 0 6px ${color}88`;
+        if (active) el.style.animation = "khap-pulse-dot 1.2s ease-in-out infinite";
+        const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+          .setLngLat([step.location.lon, step.location.lat])
+          .addTo(map);
+        return marker;
+      })
+      .filter(Boolean);
+  }, [route, activeStepIdx, mapLoaded]);
+
+  // ── Coverage radius circles (drawn as a GeoJSON polygon layer) ───────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    const wantCircles = activeLayer === "coverage" && userLocation;
+    const srcId = "coverage-src";
+
+    if (!map.getSource(srcId)) {
+      map.addSource(srcId, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "coverage-fill", type: "fill", source: srcId,
+        paint: { "fill-color": ["get", "color"], "fill-opacity": ["get", "opacity"] },
+      });
+      map.addLayer({
+        id: "coverage-line", type: "line", source: srcId,
+        paint: { "line-color": ["get", "color"], "line-width": 1.5, "line-dasharray": [2, 2] },
+      });
+    }
+
+    if (!wantCircles) {
+      map.getSource(srcId)?.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+
+    const rings = [
+      { km: 5,  color: "#10b981", opacity: 0.08 },
+      { km: 10, color: "#3b82f6", opacity: 0.05 },
+      { km: 20, color: "#f59e0b", opacity: 0.04 },
+    ];
+    const features = rings.map(({ km, color, opacity }) => ({
+      type: "Feature",
+      properties: { color, opacity },
+      geometry: circlePolygon(userLocation.lon, userLocation.lat, km),
+    }));
+    map.getSource(srcId).setData({ type: "FeatureCollection", features });
+  }, [activeLayer, userLocation, mapLoaded]);
 
   return (
     <div style={{ flex: 1, position: "relative" }}>
+      <style>{`
+        @keyframes khap-ripple { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(2.5); opacity: 0; } }
+        @keyframes khap-pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        @keyframes khap-spin { to { transform: rotate(360deg); } }
+        @keyframes khap-pulse { 0%,100% { opacity:.4; transform:scale(.92); } 50% { opacity:1; transform:scale(1); } }
+        .maplibregl-popup-content { font-family: system-ui, sans-serif; }
+      `}</style>
 
       {/* ── Loading overlay ── */}
-      {loading && facilities.length === 0 && (
+      {loading && facilities.length === 0 && !mapFailed && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 2000,
           background: dark ? "rgba(9,15,23,0.82)" : "rgba(240,244,248,0.82)",
@@ -204,10 +509,6 @@ export default function MapView({
           display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center", gap: 16,
         }}>
-          <style>{`
-            @keyframes khap-spin { to { transform: rotate(360deg); } }
-            @keyframes khap-pulse { 0%,100% { opacity:.4; transform:scale(.92); } 50% { opacity:1; transform:scale(1); } }
-          `}</style>
           <div style={{
             width: 56, height: 56, borderRadius: "50%",
             border: `4px solid ${dark ? "#1f2937" : "#e5e7eb"}`,
@@ -246,189 +547,26 @@ export default function MapView({
         {tileModeLabel[tileMode]}
       </button>
 
-      <MapContainer
-        center={[-0.0236, 37.9062]}
-        zoom={6}
-        style={{ height: "100%", width: "100%" }}
-        zoomControl
-        preferCanvas={false}
-      >
-        {/* ── Base tile layer ── */}
-        {tileMode === "dark" && (
-          <TileLayer url={DARK_TILE} attribution='&copy; <a href="https://carto.com/">CARTO</a>' maxZoom={19} />
-        )}
-        {tileMode === "light" && (
-          <>
-            <TileLayer url={LIGHT_TILE} attribution='&copy; <a href="https://carto.com/">CARTO</a>' maxZoom={19} />
-            <TileLayer url={LABEL_TILE} attribution="" maxZoom={19} />
-          </>
-        )}
-        {tileMode === "satellite" && (
-          <>
-            <TileLayer
-              url={SATELLITE_TILE}
-              attribution="&copy; Esri &mdash; Esri, Maxar, GeoEye, Earthstar Geographics"
-              maxZoom={18}
-            />
-            {/* Add road/label overlay on satellite for context */}
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png"
-              attribution=""
-              maxZoom={18}
-              opacity={0.7}
-            />
-          </>
-        )}
+      <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
 
-        {userLocation && <FlyToUser userLocation={userLocation} />}
-        {routeCoords?.length >= 2 && <FitRoute coords={routeCoords} />}
-        {selectedFacility?.latitude && !route && (
-          <FlyTo target={[selectedFacility.latitude, selectedFacility.longitude]} />
-        )}
-
-        {/* ── User location ── */}
-        {userLocation && (
-          <>
-            <Marker position={[userLocation.lat, userLocation.lon]} icon={userIcon()} zIndexOffset={1000}>
-              <Popup>
-                <strong>📍 Your Location</strong>
-                {userLocation.accuracy && (
-                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-                    Accuracy: ±{Math.round(userLocation.accuracy)}m
-                  </div>
-                )}
-              </Popup>
-            </Marker>
-            {activeLayer === "coverage" && (
-              <>
-                <Circle center={[userLocation.lat, userLocation.lon]} radius={5000}  pathOptions={{ color: "#10b981", fillOpacity: 0.08, weight: 1.5, dashArray: "4 4" }} />
-                <Circle center={[userLocation.lat, userLocation.lon]} radius={10000} pathOptions={{ color: "#3b82f6", fillOpacity: 0.05, weight: 1.5, dashArray: "4 4" }} />
-                <Circle center={[userLocation.lat, userLocation.lon]} radius={20000} pathOptions={{ color: "#f59e0b", fillOpacity: 0.04, weight: 1,   dashArray: "4 4" }} />
-              </>
-            )}
-          </>
-        )}
-
-        {/* ── Alternate routes (grayed out, behind main route) ── */}
-        {altRoutes.map((alt, i) => {
-          const altCoords = alt.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]);
-          if (!altCoords?.length) return null;
-          return (
-            <Polyline
-              key={`alt-${i}`}
-              positions={altCoords}
-              pathOptions={{
-                color: dark ? "#4b5563" : "#9ca3af",
-                weight: 4,
-                opacity: 0.55,
-                dashArray: "6 5",
-              }}
-            />
-          );
-        })}
-
-        {/* ── Main route — double-stroke road feel + animated dashes ── */}
-        {routeCoords?.length > 0 && (
-          <>
-            {/* Shadow / road casing */}
-            <Polyline
-              positions={routeCoords}
-              pathOptions={{ color: dark ? "#1e3a5f" : "#1d4ed8", weight: 9, opacity: 0.35 }}
-            />
-            {/* Core line */}
-            <Polyline
-              positions={routeCoords}
-              pathOptions={{ color: "#60a5fa", weight: 4, opacity: 1 }}
-            />
-            {/* Animated directional chevrons */}
-            <AnimatedPolyline
-              positions={routeCoords}
-              pathOptions={{
-                color: "#93c5fd",
-                weight: 3,
-                opacity: 0.85,
-                dashArray: "10 8",
-              }}
-              speed={0.5}
-            />
-          </>
-        )}
-
-        {/* ── Destination pin ── */}
-        {destination?.latitude && (
-          <Marker
-            position={[destination.latitude, destination.longitude]}
-            icon={destinationIcon(destination.name)}
-            zIndexOffset={900}
-          >
-            <Popup>
-              <div style={{ minWidth: 180 }}>
-                <strong style={{ fontSize: 13 }}>{destination.name}</strong><br />
-                <span style={{ color: "#666", fontSize: 12 }}>{destination.type}</span><br />
-                {route?.distance_km != null && (
-                  <span style={{ fontSize: 12 }}>🚗 {route.distance_km} km · ⏱ {route.duration_minutes} min</span>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        )}
-
-        {/* ── Active step dot on map ── */}
-        {steps.map((step, i) => {
-          if (!step.location) return null;
-          if (step.type === "depart" || step.type === "arrive") return null;
-          const isActive = i === activeStepIdx;
-          return (
-            <Marker
-              key={`step-${i}`}
-              position={[step.location.lat, step.location.lon]}
-              icon={stepDotIcon(isActive)}
-              zIndexOffset={isActive ? 800 : 100}
-            >
-              <Popup>
-                <div style={{ fontSize: 12, maxWidth: 160 }}>
-                  <strong>{step.icon} {step.instruction}</strong>
-                  {step.distance_km > 0 && (
-                    <div style={{ color: "#6b7280", marginTop: 2 }}>{step.distance_km} km</div>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-
-        {/* ── Facility markers — clustered ── */}
-        <MarkerClusterGroup
-          chunkedLoading
-          iconCreateFunction={createClusterIcon}
-          maxClusterRadius={50}
-          spiderfyOnMaxZoom
-          showCoverageOnHover={false}
-          zoomToBoundsOnClick
-          disableClusteringAtZoom={14}
-        >
-          {facilities.map((f) => {
-            if (!f.latitude || !f.longitude) return null;
-            const color    = FACILITY_COLORS[f.type] || FACILITY_COLORS.default;
-            const selected = selectedFacility?.facility_id === f.facility_id;
-            const isTop    = smartResults && f.score != null && f.score >= 65;
-            const size     = selected ? 20 : isTop ? 14 : 9;
-
-            return (
-              <Marker
-                key={f.facility_id}
-                position={[f.latitude, f.longitude]}
-                icon={makeIcon(color, size, isTop && !selected, false)}
-                eventHandlers={{ click: () => onFacilitySelect(f) }}
-              >
-                <Popup>
-                  <FacilityPopup f={f} />
-                </Popup>
-              </Marker>
-            );
-          })}
-        </MarkerClusterGroup>
-      </MapContainer>
+      {mapFailed && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 1900,
+          background: dark ? "#0f1923" : "#f0f4f8",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 10, padding: 24,
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: 32 }}>🗺️</div>
+          <div style={{ color: dark ? "#e2e8f0" : "#374151", fontWeight: 700, fontSize: 15 }}>
+            This browser can't render the map
+          </div>
+          <div style={{ color: dark ? "#6b7280" : "#9ca3af", fontSize: 12, maxWidth: 340 }}>
+            MapLibre GL needs WebGL, which isn't available in this preview environment.
+            It works normally in regular desktop/mobile browsers with hardware acceleration enabled.
+          </div>
+        </div>
+      )}
 
       <Legend activeLayer={activeLayer} theme={theme} smartResults={smartResults} />
       <StatsBar facilities={facilities} theme={theme} route={route} />
@@ -436,49 +574,16 @@ export default function MapView({
   );
 }
 
-// ── Facility popup ─────────────────────────────────────────────────────────────
-
-function FacilityPopup({ f }) {
-  const beds    = (f.beds || 0) + (f.cots || 0);
-  const fl      = f.financial_level;
-  const flColor = FIN_COLORS[fl] || "#6b7280";
-
-  return (
-    <div style={{ minWidth: 200, fontFamily: "system-ui, sans-serif" }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{f.name}</div>
-      <div style={{ color: "#6b7280", fontSize: 11, marginBottom: 6 }}>
-        {f.type} · {f.county} County
-        {f.nearest_town ? ` · ${f.nearest_town}` : ""}
-      </div>
-
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-        <span style={{ background: f.operational_status === "Operational" ? "#d1fae5" : "#fee2e2", color: f.operational_status === "Operational" ? "#065f46" : "#991b1b", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 600 }}>
-          {f.operational_status || "Unknown"}
-        </span>
-        {f.open_24_hours && <span style={{ background: "#dbeafe", color: "#1e40af", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 600 }}>🕐 24hrs</span>}
-        {f.open_weekends && <span style={{ background: "#ede9fe", color: "#5b21b6", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 600 }}>📅 Wknds</span>}
-      </div>
-
-      {beds > 0 && <div style={{ fontSize: 11, marginBottom: 3 }}>🛏 <strong>{beds}</strong> beds/cots</div>}
-      {f.distance_km != null && <div style={{ fontSize: 11, marginBottom: 3 }}>📍 <strong>{f.distance_km} km</strong>{f.estimated_minutes != null ? ` · ⏱ ${f.estimated_minutes} min` : ""}</div>}
-      {fl && (
-        <div style={{ fontSize: 11, marginBottom: 3 }}>
-          💰 <span style={{ color: flColor, fontWeight: 600 }}>{fl} cost</span>
-        </div>
-      )}
-      {(f.insurance_providers || []).length > 0 && (
-        <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>
-          🛡 {f.insurance_providers.slice(0, 3).join(" · ")}
-        </div>
-      )}
-      {f.score != null && (
-        <div style={{ fontSize: 11, color: "#10b981", fontWeight: 600, marginTop: 4 }}>
-          ⭐ Match: {f.score}/100
-          {f.match_reason && <div style={{ color: "#9ca3af", fontWeight: 400, fontStyle: "italic", fontSize: 10 }}>{f.match_reason}</div>}
-        </div>
-      )}
-    </div>
-  );
+// ── Small geo helper: approximate circle as a GeoJSON polygon ──────────────
+function circlePolygon(lon, lat, radiusKm, points = 64) {
+  const coords = [];
+  const distanceX = radiusKm / (111.32 * Math.cos((lat * Math.PI) / 180));
+  const distanceY = radiusKm / 110.57;
+  for (let i = 0; i <= points; i++) {
+    const theta = (i / points) * (2 * Math.PI);
+    coords.push([lon + distanceX * Math.cos(theta), lat + distanceY * Math.sin(theta)]);
+  }
+  return { type: "Polygon", coordinates: [coords] };
 }
 
 // ── Legend ────────────────────────────────────────────────────────────────────
@@ -586,7 +691,7 @@ function StatsBar({ facilities, theme, route }) {
         </>
       )}
       <span style={{ marginLeft: "auto", color: "#6b7280", fontSize: 10 }}>
-        KHAP v3 · OSM + PostGIS
+        KHAP v3 · MapLibre GL + OSM
       </span>
     </div>
   );

@@ -34,6 +34,17 @@ export async function suggestFacilities(q, limit = 8) {
   return res.json();
 }
 
+// Real geocoding — resolves free-text places (roads, landmarks, estates,
+// bus stops) that aren't in the facilities dataset, via Nominatim/OSM.
+export async function geocodeLocation(q) {
+  if (!q || q.trim().length < 2) return null;
+  const p = new URLSearchParams({ q: q.trim() });
+  const res = await fetch(`${BASE}/recommendations/geocode?${p}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.result || null;
+}
+
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
 export async function fetchAccessibilityScores() {

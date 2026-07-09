@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { suggestFacilities } from "../api/index.js";
+import { suggestFacilities, geocodeLocation } from "../api/index.js";
 
 const LAYERS = [
   { id: "facilities",    label: "🏥 Facilities" },
@@ -35,8 +35,30 @@ export default function TopBar({
     setSugLoading(true);
     try {
       const data = await suggestFacilities(q, 8);
-      setSuggestions(data.suggestions || []);
-      setShowSugg((data.suggestions || []).length > 0);
+      const facilitySugs = data.suggestions || [];
+
+      // Only hit the geocoder when facility matches are thin — Nominatim is
+      // rate-limited (~1 req/sec) so we don't want to fire it on every keystroke.
+      let geoSug = null;
+      if (facilitySugs.length < 4) {
+        const geo = await geocodeLocation(q).catch(() => null);
+        if (geo) {
+          geoSug = {
+            facility_id: `geo:${geo.latitude},${geo.longitude}`,
+            name: geo.label,
+            type: "Location",
+            county: "",
+            operational_status: "Operational",
+            latitude: geo.latitude,
+            longitude: geo.longitude,
+            isGeocoded: true,
+          };
+        }
+      }
+
+      const merged = geoSug ? [geoSug, ...facilitySugs] : facilitySugs;
+      setSuggestions(merged);
+      setShowSugg(merged.length > 0);
     } catch { setSuggestions([]); }
     finally { setSugLoading(false); }
   }, []);
@@ -174,15 +196,22 @@ export default function TopBar({
                 onMouseDown={() => handleSelect(sug)}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                    background: FACILITY_TYPE_COLORS[sug.type] || "#6b7280",
-                  }} />
+                  {sug.isGeocoded ? (
+                    <span style={{ fontSize: 11, flexShrink: 0 }}>📍</span>
+                  ) : (
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                      background: FACILITY_TYPE_COLORS[sug.type] || "#6b7280",
+                    }} />
+                  )}
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 12 }}>{sug.name}</div>
                     <div style={{ fontSize: 10, color: "#6b7280" }}>
-                      {sug.type} · {sug.county}
-                      {sug.operational_status !== "Operational" && <span style={{ color: "#f97316" }}> · {sug.operational_status}</span>}
+                      {sug.isGeocoded
+                        ? "Location (map pin)"
+                        : <>{sug.type} · {sug.county}
+                            {sug.operational_status !== "Operational" && <span style={{ color: "#f97316" }}> · {sug.operational_status}</span>}
+                          </>}
                     </div>
                   </div>
                 </div>
