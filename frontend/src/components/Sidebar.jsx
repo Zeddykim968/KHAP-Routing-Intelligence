@@ -1,10 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   fetchRoute, fetchCoverage, fetchEmergencyZones,
   fetchCountyReport, fetchCountyRankings,
   fetchSmartRecommendations, fetchRoadRoute,
   fetchPopulationServed, fetchNearestFacility,
+  suggestFacilities, geocodeLocation,
 } from "../api/index.js";
+
+function useDebounce(fn, delay) {
+  const timer = useRef(null);
+  return useCallback((...args) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => fn(...args), delay);
+  }, [fn, delay]);
+}
 
 const BAND_COLORS = {
   Excellent: "#10b981", Good: "#3b82f6", Moderate: "#f59e0b",
@@ -42,6 +51,16 @@ export default function Sidebar({
 
   const [popData, setPopData]     = useState(null);
   const [popRadius, setPopRadius] = useState(10);
+
+  // ── Route Finder (search-and-route-anywhere) ────────────────────────────
+  const [routeQuery, setRouteQuery]         = useState("");
+  const [routeSuggestions, setRouteSuggestions] = useState([]);
+  const [showRouteSugg, setShowRouteSugg]   = useState(false);
+  const [routeSugLoading, setRouteSugLoading] = useState(false);
+  const [routeSearchLoading, setRouteSearchLoading] = useState(false);
+  const [routeSearchError, setRouteSearchError] = useState(null);
+  const routeInputRef = useRef(null);
+  const routeDropRef  = useRef(null);
 
   const dark = theme === "dark";
 
@@ -140,6 +159,15 @@ export default function Sidebar({
     }),
   };
 
+  // Close route-finder dropdown on outside click
+  React.useEffect(() => {
+    function handler(e) {
+      if (!routeDropRef.current?.contains(e.target)) setShowRouteSugg(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   // ── Route helpers ────────────────────────────────────────────────────────
 
   function _applyRoute(r, destination) {
@@ -213,6 +241,61 @@ export default function Sidebar({
       );
       _applyRoute(r, facility);
     } catch (e) { console.error(e); } finally { setRoutingFacility(null); }
+  }
+
+  // ── Route Finder: search any facility (or free-text place) and route ────
+
+  const fetchRouteSuggestions = useCallback(async (q) => {
+    if (!q || q.length < 2) { setRouteSuggestions([]); setShowRouteSugg(false); return; }
+    setRouteSugLoading(true);
+    try {
+      const data = await suggestFacilities(q, 8);
+      const facilitySugs = data.suggestions || [];
+      let geoSug = null;
+      if (facilitySugs.length < 4) {
+        const geo = await geocodeLocation(q).catch(() => null);
+        if (geo) {
+          geoSug = {
+            facility_id: `geo:${geo.latitude},${geo.longitude}`,
+            name: geo.label, type: "Location", county: "",
+            operational_status: "Operational",
+            latitude: geo.latitude, longitude: geo.longitude,
+            isGeocoded: true,
+          };
+        }
+      }
+      const merged = geoSug ? [geoSug, ...facilitySugs] : facilitySugs;
+      setRouteSuggestions(merged);
+      setShowRouteSugg(merged.length > 0);
+    } catch { setRouteSuggestions([]); }
+    finally { setRouteSugLoading(false); }
+  }, []);
+
+  const debouncedRouteFetch = useDebounce(fetchRouteSuggestions, 280);
+
+  function handleRouteQueryChange(e) {
+    const v = e.target.value;
+    setRouteQuery(v);
+    setRouteSearchError(null);
+    debouncedRouteFetch(v);
+  }
+
+  async function handleRouteSuggestionSelect(sug) {
+    setRouteQuery(sug.name);
+    setRouteSuggestions([]);
+    setShowRouteSugg(false);
+    if (!userLocation) { setRouteSearchError("Enable location to get directions"); return; }
+    setRouteSearchLoading(true);
+    setRouteSearchError(null);
+    setRoutingFacility(sug.facility_id);
+    try {
+      const r = await fetchRoadRoute(
+        userLocation.lat, userLocation.lon,
+        sug.latitude, sug.longitude
+      );
+      _applyRoute(r, sug);
+    } catch (e) { setRouteSearchError(e.message); }
+    finally { setRouteSearchLoading(false); setRoutingFacility(null); }
   }
 
   async function handleNearestHospital() {
@@ -337,6 +420,63 @@ export default function Sidebar({
 
   return (
     <div style={s.sidebar}>
+      {/* ── ROUTE FINDER: search any facility/place, route from here ──── */}
+      <div style={s.sec} ref={routeDropRef}>
+        <div style={s.label}>🧭 Route Finder</div>
+        <div style={{ position: "relative" }}>
+          <input
+            ref={routeInputRef}
+            style={s.select}
+            placeholder="Search a hospital, clinic, or place…"
+            value={routeQuery}
+            onChange={handleRouteQueryChange}
+            onFocus={() => routeSuggestions.length > 0 && setShowRouteSugg(true)}
+            autoComplete="off"
+          />
+          {routeQuery && (
+            <button
+              style={{
+                position: "absolute", right: 8, top: 7, background: "none", border: "none",
+                color: "#6b7280", cursor: "pointer", fontSize: 12, padding: 0,
+              }}
+              onClick={() => { setRouteQuery(""); setRouteSuggestions([]); setShowRouteSugg(false); setRouteSearchError(null); }}
+            >✕</button>
+          )}
+          {showRouteSugg && routeSuggestions.length > 0 && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0,
+              background: dark ? "#1f2937" : "#fff",
+              border: `1px solid ${dark ? "#374151" : "#d1d5db"}`,
+              borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+              zIndex: 2000, maxHeight: 280, overflowY: "auto",
+            }}>
+              {routeSuggestions.map((sug) => (
+                <div
+                  key={sug.facility_id}
+                  style={{
+                    padding: "8px 10px", cursor: "pointer", fontSize: 12,
+                    color: dark ? "#e2e8f0" : "#111827",
+                    borderBottom: `1px solid ${dark ? "#374151" : "#f3f4f6"}`,
+                  }}
+                  onMouseDown={() => handleRouteSuggestionSelect(sug)}
+                >
+                  <div style={{ fontWeight: 600 }}>
+                    {sug.isGeocoded ? "📍 " : "🏥 "}{sug.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#6b7280" }}>
+                    {sug.isGeocoded ? "Location (map pin)" : <>{sug.type}{sug.county && <> · {sug.county}</>}</>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {routeSugLoading && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>Searching…</div>}
+        {routeSearchLoading && <div style={{ fontSize: 11, color: "#3b82f6", marginTop: 4 }}>🔄 Getting directions…</div>}
+        {routeSearchError && <div style={s.errBox}>⚠️ {routeSearchError}</div>}
+        {!userLocation && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>⚠️ Enable location for directions</div>}
+      </div>
+
       {/* County filter */}
       <div style={s.sec}>
         <div style={s.label}>Filter by County</div>
