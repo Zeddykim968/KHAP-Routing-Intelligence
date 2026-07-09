@@ -97,9 +97,9 @@ def platform_stats():
     """Quick platform health check with live facility count."""
     supabase = get_client()
     try:
-        result = supabase.table("health_facilities").select("facility_id", count="exact").limit(1).execute()
+        result = supabase.table("facilities").select("facility_id", count="exact").limit(1).execute()
         total = result.count or 0
-        op_result = supabase.table("health_facilities").select("facility_id", count="exact").eq("operational_status", "Operational").limit(1).execute()
+        op_result = supabase.table("facilities").select("facility_id", count="exact").eq("operational_status", "Operational").limit(1).execute()
         operational = op_result.count or 0
     except Exception as e:
         raise HTTPException(500, f"Database query failed: {e}")

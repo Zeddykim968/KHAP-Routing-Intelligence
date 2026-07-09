@@ -1,9 +1,36 @@
+import httpx
 from fastapi import APIRouter, Query, HTTPException
 from app.services.supabase_service import fetch_all
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score
 
 router = APIRouter(prefix="/ambulance", tags=["Emergency"])
+
+OSRM_BASE = "https://router.project-osrm.org/route/v1/driving"
+OSRM_HEADERS = {"User-Agent": "KHAP-Routing/1.0"}
+
+
+def _osrm_summary(from_lon, from_lat, to_lon, to_lat, timeout=5):
+    """Lightweight OSRM call for real road distance + duration (no geometry/steps)."""
+    try:
+        resp = httpx.get(
+            f"{OSRM_BASE}/{from_lon},{from_lat};{to_lon},{to_lat}",
+            params={"overview": "false", "steps": "false"},
+            timeout=timeout,
+            headers=OSRM_HEADERS,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == "Ok" and data.get("routes"):
+                r = data["routes"][0]
+                return {
+                    "road_km": round(r["distance"] / 1000, 2),
+                    "dur_min": round(r["duration"] / 60),
+                }
+    except Exception:
+        pass
+    return None
+
 
 EMERGENCY_TYPES = {
     "District Hospital",
@@ -64,18 +91,31 @@ def emergency_nearest(
         scored.append((score, dist_km, f))
 
     scored.sort(key=lambda x: (x[0], -x[1]), reverse=True)
-    _, dist_km, best = scored[0]
+    top = scored[:4]  # best + up to 3 alternatives — try real OSRM routing on each
 
     def fmt(f, d):
+        osrm = _osrm_summary(lon, lat, f["longitude"], f["latitude"])
+        if osrm:
+            road_km = osrm["road_km"]
+            dur_min = osrm["dur_min"]
+            eta_source = "osrm"
+        else:
+            road_km = round(d * 1.35, 2)
+            dur_min = round((road_km / 40) * 60)
+            eta_source = "estimate"
         return {
             **f,
             "distance_km": d,
-            "estimated_drive_minutes": round((d * 1.35 / 60) * 60),
+            "estimated_road_km": road_km,
+            "estimated_drive_minutes": dur_min,
+            "eta_source": eta_source,
         }
+
+    formatted = [fmt(f, d) for _, d, f in top]
 
     return {
         "emergency": True,
         "search_location": resolved_label or {"latitude": lat, "longitude": lon},
-        "nearest_facility": fmt(best, dist_km),
-        "alternatives": [fmt(f, d) for _, d, f in scored[1:4]],
+        "nearest_facility": formatted[0],
+        "alternatives": formatted[1:],
     }

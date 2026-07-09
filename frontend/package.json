@@ -4,11 +4,13 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5174 --host 0.0.0.0",
+    "dev": "vite --port 5173 --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "browserslist": "^4.28.5",
+    "caniuse-lite": "^1.0.30001803",
     "leaflet": "^1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
