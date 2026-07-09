@@ -71,7 +71,7 @@ def health():
     # ── Supabase: row count + response time ──────────────────────────────────
     try:
         t0 = time.time()
-        r = supabase.table("facilities").select("facility_id", count="exact").limit(1).execute()
+        r = supabase.table("health_facilities").select("facility_id", count="exact").limit(1).execute()
         db_ms = round((time.time() - t0) * 1000)
         total = r.count or 0
         checks["database"] = {
@@ -89,7 +89,7 @@ def health():
     # ── Operational subset ────────────────────────────────────────────────────
     try:
         r2 = (
-            supabase.table("facilities")
+            supabase.table("health_facilities")
             .select("facility_id", count="exact")
             .eq("operational_status", "Operational")
             .limit(1)

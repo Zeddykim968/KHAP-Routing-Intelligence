@@ -1,12 +1,10 @@
 ---
 name: KHAP Supabase table name
-description: The correct facilities table name in Supabase for the KHAP routing microservice, to avoid PGRST205 schema errors.
+description: The facilities table name in Supabase for the KHAP routing microservice — verify, don't assume.
 ---
 
-The KHAP routing microservice's single Supabase table is `public.facilities` (7,406 rows).
+The correct table name is **project-specific** and has flipped between `public.facilities` and `public.health_facilities` across different Supabase instances connected to this repl over time. Do not trust either name from memory.
 
-**Why:** A legacy edit introduced `health_facilities` as the table name in `app/services/supabase_service.py` and `app/routes/api.py`, but that table doesn't exist — it caused `postgrest.exceptions.APIError: PGRST205 ... Perhaps you meant 'public.facilities'` on every call to `fetch_all`/`fetch_one`/`search_ilike`, silently breaking the `/ambulance` endpoint and any other route depending on those helpers.
+**Why:** Past sessions assumed a fixed name and got PGRST205 "table not found" errors when the connected Supabase project actually used the other name. As of 2026-07-09, the live Supabase project uses `public.health_facilities`.
 
-**How to apply:** If you see PGRST205 "table not found" errors from Supabase, grep for `supabase.table(` calls and confirm they all reference `"facilities"`, not any other name. The `/health` endpoint's direct Supabase check is a reliable reference for the correct table name since it's less often touched.
-
-**Recurrence note:** This regressed a second time in `app/services/supabase_service.py` (all three helpers: `fetch_all`, `fetch_one`, `search_ilike`) after unrelated frontend work, breaking `/recommendations/counties`, `/recommendations/types`, and `/recommendations/list` with the same PGRST205 error. If any `/recommendations/*` or `/ambulance` endpoint returns 500, check this file first before assuming a frontend bug.
+**How to apply:** If `/health`, `/recommendations/*`, or `/ambulance` return PGRST205 or "unhealthy" with a schema-cache error, don't just grep-and-guess. Run a live query against the current `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` (e.g. `supabase.table("<name>").select("*").limit(1).execute()`, or read the PGRST205 error's "Perhaps you meant" hint) to find the real table name, then grep for all `supabase.table(...)` calls across `app/main.py`, `app/routes/*.py`, and `app/services/supabase_service.py` and make them consistent.

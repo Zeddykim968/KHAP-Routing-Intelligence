@@ -41,7 +41,7 @@ def fetch_all(columns: str = "*", filters: dict | None = None) -> list[dict]:
     all_rows: list[dict] = []
     offset = 0
     while True:
-        q = supabase.table("facilities").select(columns).range(offset, offset + PAGE_SIZE - 1)
+        q = supabase.table("health_facilities").select(columns).range(offset, offset + PAGE_SIZE - 1)
         if filters:
             for key, val in filters.items():
                 if val is not None:
@@ -58,7 +58,7 @@ def fetch_all(columns: str = "*", filters: dict | None = None) -> list[dict]:
 def fetch_one(facility_id: int) -> dict | None:
     """Fetch a single facility by integer ID."""
     result = (
-        supabase.table("facilities")
+        supabase.table("health_facilities")
         .select("*")
         .eq("facility_id", facility_id)
         .limit(1)
@@ -70,7 +70,7 @@ def fetch_one(facility_id: int) -> dict | None:
 
 def search_ilike(column: str, term: str, operational_only: bool = True, limit: int = 50) -> list[dict]:
     """Case-insensitive substring search on a single column."""
-    q = supabase.table("facilities").select("*").ilike(column, f"%{term}%").limit(limit)
+    q = supabase.table("health_facilities").select("*").ilike(column, f"%{term}%").limit(limit)
     if operational_only:
         q = q.eq("operational_status", "Operational")
     result = q.execute()
