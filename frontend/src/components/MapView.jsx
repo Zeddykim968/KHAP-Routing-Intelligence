@@ -1,24 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-
-const FACILITY_COLORS = {
-  "District Hospital":           "#ef4444",
-  "Provincial General Hospital": "#dc2626",
-  "National Referral Hospital":  "#b91c1c",
-  "Sub-District Hospital":       "#f97316",
-  "Other Hospital":              "#fb923c",
-  "Medical Centre":              "#f59e0b",
-  "Health Centre":               "#3b82f6",
-  "Nursing Home":                "#8b5cf6",
-  "Maternity Home":              "#ec4899",
-  "Medical Clinic":              "#06b6d4",
-  "Dispensary":                  "#10b981",
-  "Dental Clinic":               "#84cc16",
-  "Eye Centre":                  "#a78bfa",
-  "Laboratory (Stand-alone)":    "#d946ef",
-  default:                       "#6b7280",
-};
+import { FACILITY_COLORS, FACILITY_CATEGORIES } from "../constants/facilityTypes.js";
 
 const BAND_COLORS = {
   Excellent: "#10b981", Good: "#3b82f6", Moderate: "#f59e0b",
@@ -577,17 +560,20 @@ function Legend({ activeLayer, theme, smartResults }) {
   );
 
   if (activeLayer === "facilities") return (
-    <div style={box}>
+    <div style={{ ...box, maxHeight: "70vh", overflowY: "auto", minWidth: 200 }}>
       <div style={title}>Facility Type</div>
-      {[
-        ["Hospital",       "#ef4444"],
-        ["Health Centre",  "#3b82f6"],
-        ["Clinic",         "#06b6d4"],
-        ["Dispensary",     "#10b981"],
-        ["Maternity",      "#ec4899"],
-        ["Other",          "#6b7280"],
-      ].map(([l, c]) => (
-        <div key={l} style={row}><div style={dot(c)} />{l}</div>
+      {FACILITY_CATEGORIES.map((cat) => (
+        <div key={cat.id} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: dark ? "#9ca3af" : "#4b5563", marginBottom: 3 }}>
+            {cat.label}
+          </div>
+          {Object.entries(cat.types).map(([type, color]) => (
+            <div key={type} style={{ ...row, marginBottom: 3 }}>
+              <div style={dot(color)} />
+              <span style={{ fontSize: 11 }}>{type}</span>
+            </div>
+          ))}
+        </div>
       ))}
       <div style={{ ...row, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${dark ? "#374151" : "#e5e7eb"}`, color: "#6b7280", fontSize: 10 }}>
         Every dot is an exact facility location — zoom in for detail

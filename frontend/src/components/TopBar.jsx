@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { suggestFacilities, geocodeLocation } from "../api/index.js";
+import { FACILITY_COLORS } from "../constants/facilityTypes.js";
 
 const LAYERS = [
   { id: "facilities",    label: "🏥 Facilities" },
@@ -159,12 +160,6 @@ export default function TopBar({
     },
   };
 
-  const FACILITY_TYPE_COLORS = {
-    "District Hospital": "#ef4444", "Health Centre": "#3b82f6",
-    "Medical Clinic": "#06b6d4", "Dispensary": "#10b981",
-    "Maternity Home": "#ec4899",
-  };
-
   return (
     <div style={s.bar}>
       <span style={s.logo}>KHAP</span>
@@ -201,7 +196,7 @@ export default function TopBar({
                   ) : (
                     <span style={{
                       width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                      background: FACILITY_TYPE_COLORS[sug.type] || "#6b7280",
+                      background: FACILITY_COLORS[sug.type] || FACILITY_COLORS.default,
                     }} />
                   )}
                   <div>
