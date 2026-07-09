@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.services.supabase_service import fetch_all, fetch_one, search_ilike
+from app.services.supabase_service import fetch_all, fetch_page, fetch_one, search_ilike
 from app.services.location_service import resolve_location
 from app.recommendation_engine import calculate_score, haversine
 
@@ -118,10 +118,17 @@ def list_facilities(
     county: str = Query(None, description="Filter by county"),
     type: str = Query(None, description="Filter by facility type"),
     operational_only: bool = Query(True),
-    limit: int = Query(500, ge=1, le=2000),
+    limit: int = Query(2000, ge=1, le=5000),
 ):
-    facilities = _fetch_facilities(operational_only, type, county)
-    return {"results": facilities[:limit], "total": len(facilities)}
+    filters: dict = {}
+    if operational_only:
+        filters["operational_status"] = "Operational"
+    if type:
+        filters["type"] = type
+    if county:
+        filters["county"] = county
+    rows = fetch_page(filters=filters, limit=limit, require_coords=True)
+    return {"results": rows, "total": len(rows)}
 
 
 @router.get("/facility/{facility_id}")
