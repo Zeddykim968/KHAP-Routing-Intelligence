@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   MapContainer, TileLayer, Marker, Popup,
   Polyline, Circle, useMap,
@@ -33,9 +33,12 @@ const FIN_COLORS = {
   "Free/Subsidized": "#10b981", Low: "#3b82f6", Medium: "#f59e0b", High: "#ef4444",
 };
 
-const DARK_TILE  = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const LIGHT_TILE = "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png";
-const LABEL_TILE = "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png";
+const DARK_TILE      = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const LIGHT_TILE     = "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png";
+const LABEL_TILE     = "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png";
+const SATELLITE_TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+
+// ── Cluster icon ─────────────────────────────────────────────────────────────
 
 function createClusterIcon(cluster) {
   const count = cluster.getChildCount();
@@ -54,6 +57,8 @@ function createClusterIcon(cluster) {
     iconSize: L.point(size, size, true),
   });
 }
+
+// ── Marker icons ─────────────────────────────────────────────────────────────
 
 function makeIcon(color, size = 10, ring = false, pulse = false) {
   const pulseStyle = pulse
@@ -99,6 +104,18 @@ function destinationIcon(name) {
   });
 }
 
+function stepDotIcon(active) {
+  const color = active ? "#f59e0b" : "#94a3b8";
+  const size  = active ? 14 : 8;
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}88;${active ? "animation:pulse 1.2s ease-in-out infinite;" : ""}"></div>`,
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// ── Map helpers ───────────────────────────────────────────────────────────────
+
 function FlyTo({ target }) {
   const map = useMap();
   useEffect(() => {
@@ -125,14 +142,55 @@ function FitRoute({ coords }) {
   return null;
 }
 
+// ── Animated directional route polyline ──────────────────────────────────────
+// Animates strokeDashoffset via requestAnimationFrame for a flowing "traffic" feel.
+
+function AnimatedPolyline({ positions, pathOptions, speed = 0.4 }) {
+  const ref    = useRef(null);
+  const rafRef = useRef(null);
+  const offset = useRef(0);
+
+  useEffect(() => {
+    const tick = () => {
+      if (ref.current?._path) {
+        offset.current = (offset.current - speed) % 20;
+        ref.current._path.style.strokeDashoffset = offset.current;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [speed]);
+
+  return <Polyline ref={ref} positions={positions} pathOptions={pathOptions} />;
+}
+
+// ── Main MapView ──────────────────────────────────────────────────────────────
+
 export default function MapView({
   facilities, userLocation, selectedFacility,
-  onFacilitySelect, route, activeLayer,
-  accessibilityScores, theme, smartResults, loading,
+  onFacilitySelect, route, onRouteSet,
+  activeLayer, accessibilityScores, theme, smartResults, loading,
+  activeStepIdx,
 }) {
+  const [tileMode, setTileMode] = useState(theme); // "dark" | "light" | "satellite"
+
+  // Sync tileMode when theme changes (unless user picked satellite)
+  useEffect(() => {
+    setTileMode((prev) => prev === "satellite" ? "satellite" : theme);
+  }, [theme]);
+
   const routeCoords = route?.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]);
+  const altRoutes   = (route?.routes || []).slice(1);           // alternate routes
   const destination = route?.destination;
-  const dark = theme === "dark";
+  const steps       = route?.steps || [];
+  const dark        = theme === "dark";
+  const isSat       = tileMode === "satellite";
+
+  const nextTile = () =>
+    setTileMode((m) => m === "dark" ? "light" : m === "light" ? "satellite" : "dark");
+
+  const tileModeLabel = { dark: "🌙", light: "☀️", satellite: "🛰" };
 
   return (
     <div style={{ flex: 1, position: "relative" }}>
@@ -150,16 +208,12 @@ export default function MapView({
             @keyframes khap-spin { to { transform: rotate(360deg); } }
             @keyframes khap-pulse { 0%,100% { opacity:.4; transform:scale(.92); } 50% { opacity:1; transform:scale(1); } }
           `}</style>
-
-          {/* Spinner ring */}
           <div style={{
             width: 56, height: 56, borderRadius: "50%",
             border: `4px solid ${dark ? "#1f2937" : "#e5e7eb"}`,
             borderTopColor: "#10b981",
             animation: "khap-spin 0.9s linear infinite",
           }} />
-
-          {/* Pulsing label */}
           <div style={{
             color: "#10b981", fontWeight: 700, fontSize: 15,
             letterSpacing: "0.04em",
@@ -167,7 +221,6 @@ export default function MapView({
           }}>
             Loading facilities…
           </div>
-
           <div style={{
             color: dark ? "#6b7280" : "#9ca3af",
             fontSize: 12, textAlign: "center", maxWidth: 220,
@@ -176,6 +229,23 @@ export default function MapView({
           </div>
         </div>
       )}
+
+      {/* ── Tile mode toggle button ── */}
+      <button
+        onClick={nextTile}
+        title={`Switch tile: currently ${tileMode}`}
+        style={{
+          position: "absolute", top: 80, right: 12, zIndex: 1100,
+          background: dark && !isSat ? "rgba(17,24,39,0.9)" : "rgba(255,255,255,0.95)",
+          border: `1px solid ${dark && !isSat ? "#374151" : "#d1d5db"}`,
+          borderRadius: 8, padding: "7px 10px", cursor: "pointer",
+          fontSize: 18, lineHeight: 1,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+        }}
+      >
+        {tileModeLabel[tileMode]}
+      </button>
+
       <MapContainer
         center={[-0.0236, 37.9062]}
         zoom={6}
@@ -183,17 +253,31 @@ export default function MapView({
         zoomControl
         preferCanvas={false}
       >
-        <TileLayer
-          url={dark ? DARK_TILE : LIGHT_TILE}
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          maxZoom={19}
-        />
-        {!dark && (
-          <TileLayer
-            url={LABEL_TILE}
-            attribution=""
-            maxZoom={19}
-          />
+        {/* ── Base tile layer ── */}
+        {tileMode === "dark" && (
+          <TileLayer url={DARK_TILE} attribution='&copy; <a href="https://carto.com/">CARTO</a>' maxZoom={19} />
+        )}
+        {tileMode === "light" && (
+          <>
+            <TileLayer url={LIGHT_TILE} attribution='&copy; <a href="https://carto.com/">CARTO</a>' maxZoom={19} />
+            <TileLayer url={LABEL_TILE} attribution="" maxZoom={19} />
+          </>
+        )}
+        {tileMode === "satellite" && (
+          <>
+            <TileLayer
+              url={SATELLITE_TILE}
+              attribution="&copy; Esri &mdash; Esri, Maxar, GeoEye, Earthstar Geographics"
+              maxZoom={18}
+            />
+            {/* Add road/label overlay on satellite for context */}
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png"
+              attribution=""
+              maxZoom={18}
+              opacity={0.7}
+            />
+          </>
         )}
 
         {userLocation && <FlyToUser userLocation={userLocation} />}
@@ -202,11 +286,18 @@ export default function MapView({
           <FlyTo target={[selectedFacility.latitude, selectedFacility.longitude]} />
         )}
 
-        {/* User location */}
+        {/* ── User location ── */}
         {userLocation && (
           <>
             <Marker position={[userLocation.lat, userLocation.lon]} icon={userIcon()} zIndexOffset={1000}>
-              <Popup><strong>📍 Your Location</strong></Popup>
+              <Popup>
+                <strong>📍 Your Location</strong>
+                {userLocation.accuracy && (
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+                    Accuracy: ±{Math.round(userLocation.accuracy)}m
+                  </div>
+                )}
+              </Popup>
             </Marker>
             {activeLayer === "coverage" && (
               <>
@@ -218,15 +309,52 @@ export default function MapView({
           </>
         )}
 
-        {/* Road route — double-stroke for road feel */}
+        {/* ── Alternate routes (grayed out, behind main route) ── */}
+        {altRoutes.map((alt, i) => {
+          const altCoords = alt.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]);
+          if (!altCoords?.length) return null;
+          return (
+            <Polyline
+              key={`alt-${i}`}
+              positions={altCoords}
+              pathOptions={{
+                color: dark ? "#4b5563" : "#9ca3af",
+                weight: 4,
+                opacity: 0.55,
+                dashArray: "6 5",
+              }}
+            />
+          );
+        })}
+
+        {/* ── Main route — double-stroke road feel + animated dashes ── */}
         {routeCoords?.length > 0 && (
           <>
-            <Polyline positions={routeCoords} pathOptions={{ color: dark ? "#1e3a5f" : "#1d4ed8", weight: 9,  opacity: 0.4 }} />
-            <Polyline positions={routeCoords} pathOptions={{ color: "#60a5fa",                              weight: 4,  opacity: 1,   dashArray: null }} />
+            {/* Shadow / road casing */}
+            <Polyline
+              positions={routeCoords}
+              pathOptions={{ color: dark ? "#1e3a5f" : "#1d4ed8", weight: 9, opacity: 0.35 }}
+            />
+            {/* Core line */}
+            <Polyline
+              positions={routeCoords}
+              pathOptions={{ color: "#60a5fa", weight: 4, opacity: 1 }}
+            />
+            {/* Animated directional chevrons */}
+            <AnimatedPolyline
+              positions={routeCoords}
+              pathOptions={{
+                color: "#93c5fd",
+                weight: 3,
+                opacity: 0.85,
+                dashArray: "10 8",
+              }}
+              speed={0.5}
+            />
           </>
         )}
 
-        {/* Destination pin */}
+        {/* ── Destination pin ── */}
         {destination?.latitude && (
           <Marker
             position={[destination.latitude, destination.longitude]}
@@ -245,7 +373,31 @@ export default function MapView({
           </Marker>
         )}
 
-        {/* Facility markers — clustered */}
+        {/* ── Active step dot on map ── */}
+        {steps.map((step, i) => {
+          if (!step.location) return null;
+          if (step.type === "depart" || step.type === "arrive") return null;
+          const isActive = i === activeStepIdx;
+          return (
+            <Marker
+              key={`step-${i}`}
+              position={[step.location.lat, step.location.lon]}
+              icon={stepDotIcon(isActive)}
+              zIndexOffset={isActive ? 800 : 100}
+            >
+              <Popup>
+                <div style={{ fontSize: 12, maxWidth: 160 }}>
+                  <strong>{step.icon} {step.instruction}</strong>
+                  {step.distance_km > 0 && (
+                    <div style={{ color: "#6b7280", marginTop: 2 }}>{step.distance_km} km</div>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+        {/* ── Facility markers — clustered ── */}
         <MarkerClusterGroup
           chunkedLoading
           iconCreateFunction={createClusterIcon}
@@ -284,9 +436,11 @@ export default function MapView({
   );
 }
 
+// ── Facility popup ─────────────────────────────────────────────────────────────
+
 function FacilityPopup({ f }) {
-  const beds = (f.beds || 0) + (f.cots || 0);
-  const fl = f.financial_level;
+  const beds    = (f.beds || 0) + (f.cots || 0);
+  const fl      = f.financial_level;
   const flColor = FIN_COLORS[fl] || "#6b7280";
 
   return (
@@ -326,6 +480,8 @@ function FacilityPopup({ f }) {
     </div>
   );
 }
+
+// ── Legend ────────────────────────────────────────────────────────────────────
 
 function Legend({ activeLayer, theme, smartResults }) {
   const dark = theme === "dark";
@@ -396,10 +552,14 @@ function Legend({ activeLayer, theme, smartResults }) {
   return null;
 }
 
+// ── Stats bar ─────────────────────────────────────────────────────────────────
+
 function StatsBar({ facilities, theme, route }) {
-  const dark = theme === "dark";
+  const dark        = theme === "dark";
   const operational = facilities.filter((f) => f.operational_status === "Operational" || f.score != null).length;
-  const open24 = facilities.filter((f) => f.open_24_hours).length;
+  const open24      = facilities.filter((f) => f.open_24_hours).length;
+  const altCount    = (route?.routes?.length || 1) - 1;
+
   return (
     <div style={{
       position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 999,
@@ -419,6 +579,9 @@ function StatsBar({ facilities, theme, route }) {
           <span>⏱ <strong style={{ color: "#f59e0b" }}>{route.duration_minutes} min</strong></span>
           {route.steps?.length > 0 && (
             <span>📍 <strong style={{ color: "#a78bfa" }}>{route.steps.length} steps</strong></span>
+          )}
+          {altCount > 0 && (
+            <span>🔀 <strong style={{ color: "#6b7280" }}>{altCount} alt route{altCount > 1 ? "s" : ""}</strong></span>
           )}
         </>
       )}

@@ -22,7 +22,7 @@ export default function Sidebar({
   counties, selectedCounty, onCountyChange, selectedFacility,
   userLocation, accessibilityScores, nationalSummary,
   activeLayer, onRouteSet, theme, emergencyTypes, insuranceProviders,
-  onSmartResults,
+  onSmartResults, liveEta, activeStepIdx,
 }) {
   const [travelInfo, setTravelInfo]     = useState(null);
   const [coverageInfo, setCoverageInfo] = useState(null);
@@ -31,6 +31,7 @@ export default function Sidebar({
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState(null);
   const [showSteps, setShowSteps]       = useState(false);
+  const [activeAltIdx, setActiveAltIdx] = useState(0); // which route option is selected
 
   const [emergencyType, setEmergencyType]   = useState("general");
   const [insurance, setInsurance]           = useState("");
@@ -39,7 +40,7 @@ export default function Sidebar({
   const [smartResults, setSmartResults]     = useState(null);
   const [routingFacility, setRoutingFacility] = useState(null);
 
-  const [popData, setPopData]   = useState(null);
+  const [popData, setPopData]     = useState(null);
   const [popRadius, setPopRadius] = useState(10);
 
   const dark = theme === "dark";
@@ -113,19 +114,57 @@ export default function Sidebar({
       height: 3, borderRadius: 2, marginTop: 4,
       background: `linear-gradient(to right, ${color} ${pct}%, ${dark ? "#374151" : "#e5e7eb"} ${pct}%)`,
     }),
-    stepRow: {
-      display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 0",
+    stepRow: (active) => ({
+      display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 6px",
+      borderRadius: active ? 6 : 0,
       borderBottom: `1px solid ${dark ? "#1f2937" : "#f3f4f6"}`, fontSize: 11,
       color: dark ? "#d1d5db" : "#374151",
-    },
-    stepIcon: (type) => ({
+      background: active ? (dark ? "#1c2d1c" : "#f0fdf4") : "transparent",
+      transition: "background 0.2s",
+    }),
+    stepIcon: (type, active) => ({
       width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
-      background: type === "arrive" ? "#10b981" : type === "depart" ? "#3b82f6" : dark ? "#374151" : "#e5e7eb",
-      color: type === "arrive" || type === "depart" ? "#fff" : dark ? "#9ca3af" : "#6b7280",
+      background: active ? "#f59e0b" : type === "arrive" ? "#10b981" : type === "depart" ? "#3b82f6" : dark ? "#374151" : "#e5e7eb",
+      color: active || type === "arrive" || type === "depart" ? "#fff" : dark ? "#9ca3af" : "#6b7280",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontSize: 11, fontWeight: 700,
+      boxShadow: active ? "0 0 8px rgba(245,158,11,0.6)" : "none",
+      transition: "all 0.2s",
+    }),
+    altTab: (active) => ({
+      flex: 1, padding: "5px 4px", border: "none", borderRadius: 5,
+      cursor: "pointer", fontSize: 10, fontWeight: 600,
+      background: active ? "#3b82f6" : (dark ? "#1f2937" : "#f3f4f6"),
+      color: active ? "#fff" : (dark ? "#9ca3af" : "#6b7280"),
+      transition: "all 0.15s",
     }),
   };
+
+  // ── Route helpers ────────────────────────────────────────────────────────
+
+  function _applyRoute(r, destination) {
+    // r has top-level compat fields + r.routes array
+    onRouteSet({ ...r, destination });
+    setTravelInfo(r);
+    setActiveAltIdx(0);
+    setShowSteps(true);
+  }
+
+  function switchAltRoute(idx) {
+    if (!travelInfo?.routes) return;
+    const chosen = travelInfo.routes[idx];
+    if (!chosen) return;
+    setActiveAltIdx(idx);
+    // Push the chosen route geometry/steps to the map but keep destination
+    onRouteSet({
+      ...travelInfo,
+      ...chosen,                  // override distance/duration/geometry/steps
+      routes: travelInfo.routes,  // keep full routes array
+      destination: travelInfo.destination,
+    });
+  }
+
+  // ── Async actions ────────────────────────────────────────────────────────
 
   async function handleGetRoute() {
     if (!userLocation || !selectedFacility) return;
@@ -135,9 +174,7 @@ export default function Sidebar({
         userLocation.lat, userLocation.lon,
         selectedFacility.latitude, selectedFacility.longitude
       );
-      onRouteSet({ ...r, destination: selectedFacility });
-      setTravelInfo(r);
-      setShowSteps(true);
+      _applyRoute(r, selectedFacility);
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
 
@@ -174,9 +211,7 @@ export default function Sidebar({
         userLocation.lat, userLocation.lon,
         facility.latitude, facility.longitude
       );
-      onRouteSet({ ...r, destination: facility });
-      setTravelInfo(r);
-      setShowSteps(true);
+      _applyRoute(r, facility);
     } catch (e) { console.error(e); } finally { setRoutingFacility(null); }
   }
 
@@ -215,6 +250,90 @@ export default function Sidebar({
   }
 
   const selectedEType = (emergencyTypes || []).find((t) => t.id === emergencyType);
+  const altRoutes     = travelInfo?.routes?.slice(1) || [];
+
+  // ── Route summary block (reused in both facilities + emergency panels) ───
+
+  function RoutePanel({ compact = false }) {
+    if (!travelInfo) return null;
+    const steps = travelInfo.steps || [];
+
+    return (
+      <div>
+        {/* ── Live ETA ── */}
+        {liveEta ? (
+          <div style={{ ...s.infoBox("#1e3a5f", "#dbeafe"), borderLeft: "3px solid #3b82f6" }}>
+            📡 <strong style={{ color: "#60a5fa" }}>Live:</strong> {liveEta.km} km · {liveEta.minutes} min remaining
+          </div>
+        ) : (
+          <div style={s.infoBox()}>
+            🚗 <strong>{travelInfo.distance_km} km</strong> road distance<br />
+            ⏱ <strong>{travelInfo.duration_minutes} min</strong> drive time<br />
+            📡 {travelInfo.source === "osrm" ? "Live routing via OpenStreetMap" : "Straight-line estimate (×1.35)"}
+          </div>
+        )}
+
+        {/* ── Alternate route tabs ── */}
+        {altRoutes.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <div style={s.label}>Route Options</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {travelInfo.routes.map((r, i) => (
+                <button key={i} style={s.altTab(activeAltIdx === i)} onClick={() => switchAltRoute(i)}>
+                  {i === 0 ? "🚗 Fastest" : `🔀 Alt ${i}`}<br />
+                  <span style={{ fontWeight: 400 }}>{r.distance_km} km · {r.duration_minutes} min</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Turn-by-turn steps ── */}
+        {steps.length > 0 && (
+          <>
+            <button
+              style={{ ...s.btn2, marginTop: 6, textAlign: "left" }}
+              onClick={() => setShowSteps((v) => !v)}
+            >
+              {showSteps ? "▲ Hide" : "▼ Show"} directions ({steps.length} steps)
+              {activeStepIdx > 0 && showSteps && (
+                <span style={{ marginLeft: 6, color: "#f59e0b", fontWeight: 700 }}>
+                  · Step {activeStepIdx + 1}
+                </span>
+              )}
+            </button>
+            {showSteps && (
+              <div style={{ marginTop: 4, maxHeight: compact ? 160 : 250, overflowY: "auto" }}>
+                {steps.map((step, i) => {
+                  const active = i === activeStepIdx;
+                  return (
+                    <div key={i} style={s.stepRow(active)}>
+                      <div style={s.stepIcon(step.type, active)}>
+                        {step.icon || STEP_ICONS[step.type] || "↑"}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: active ? 700 : 400, color: active ? (dark ? "#fde68a" : "#92400e") : undefined }}>
+                          {step.instruction}
+                        </div>
+                        {step.distance_km > 0 && (
+                          <div style={{ color: "#6b7280", fontSize: 10 }}>
+                            {step.distance_km} km · {step.duration_min} min
+                          </div>
+                        )}
+                      </div>
+                      {active && (
+                        <span style={{ fontSize: 9, color: "#f59e0b", fontWeight: 700, flexShrink: 0 }}>NOW</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={s.sidebar}>
@@ -263,47 +382,7 @@ export default function Sidebar({
                 </button>
               )}
 
-              {/* Route summary */}
-              {travelInfo && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={s.infoBox()}>
-                    🚗 <strong>{travelInfo.distance_km} km</strong> road distance<br />
-                    ⏱ <strong>{travelInfo.duration_minutes} min</strong> drive time<br />
-                    📡 {travelInfo.source === "osrm" ? "Live routing via OpenStreetMap" : "Straight-line estimate (×1.35)"}
-                  </div>
-
-                  {/* Turn-by-turn steps */}
-                  {travelInfo.steps?.length > 0 && (
-                    <>
-                      <button
-                        style={{ ...s.btn2, marginTop: 6, textAlign: "left" }}
-                        onClick={() => setShowSteps((v) => !v)}
-                      >
-                        {showSteps ? "▲ Hide" : "▼ Show"} turn-by-turn ({travelInfo.steps.length} steps)
-                      </button>
-                      {showSteps && (
-                        <div style={{ marginTop: 6, maxHeight: 220, overflowY: "auto" }}>
-                          {travelInfo.steps.map((step, i) => (
-                            <div key={i} style={s.stepRow}>
-                              <div style={s.stepIcon(step.type)}>
-                                {step.icon || STEP_ICONS[step.type] || "↑"}
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <div>{step.instruction}</div>
-                                {step.distance_km > 0 && (
-                                  <div style={{ color: "#6b7280", fontSize: 10 }}>
-                                    {step.distance_km} km · {step.duration_min} min
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
+              <RoutePanel />
             </div>
           ) : (
             <div style={{ ...s.sec, color: dark ? "#6b7280" : "#9ca3af", fontSize: 12, textAlign: "center", lineHeight: 1.8 }}>
@@ -364,32 +443,10 @@ export default function Sidebar({
 
           {error && <div style={s.errBox}>⚠️ {error}</div>}
 
-          {/* Route summary while in emergency mode */}
+          {/* Route summary in emergency mode */}
           {travelInfo && (
-            <div style={{ ...s.infoBox(), marginTop: 8 }}>
-              🚗 <strong>{travelInfo.distance_km} km</strong> · ⏱ <strong>{travelInfo.duration_minutes} min</strong>
-              {travelInfo.steps?.length > 0 && (
-                <>
-                  <button
-                    style={{ ...s.btn2, marginTop: 4, padding: "3px 8px", fontSize: 10, width: "auto" }}
-                    onClick={() => setShowSteps((v) => !v)}
-                  >
-                    {showSteps ? "▲ Hide" : "▼ Show"} directions ({travelInfo.steps.length} steps)
-                  </button>
-                  {showSteps && (
-                    <div style={{ marginTop: 4, maxHeight: 160, overflowY: "auto" }}>
-                      {travelInfo.steps.map((step, i) => (
-                        <div key={i} style={{ ...s.stepRow, padding: "3px 0" }}>
-                          <div style={{ ...s.stepIcon(step.type), width: 18, height: 18, fontSize: 9 }}>
-                            {step.icon || "↑"}
-                          </div>
-                          <div style={{ fontSize: 10 }}>{step.instruction}{step.distance_km > 0 ? ` (${step.distance_km} km)` : ""}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+            <div style={{ padding: "8px 0" }}>
+              <RoutePanel compact />
             </div>
           )}
 

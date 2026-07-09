@@ -1,0 +1,50 @@
+I went through your project — here's what you've actually got, then what's missing to get to Bolt/Uber-level routing and Google Maps-level map detail.
+
+## Where you are right now
+
+- **Routing**: `smart_routing.py`'s `/smart/road-route` hits the **public OSRM demo server** (`router.project-osrm.org`) for real driving directions + turn-by-turn steps, falling back to a straight-line × 1.35 estimate if that fails. `/smart/nearest` and `/ambulance` never even call OSRM — they're straight-line-only.
+- **No live tracking**: `App.jsx` calls `getCurrentPosition` once on load. Your position is never updated after that.
+- **No pgRouting yet**: `001_extensions.sql` only enables PostGIS/uuid-ossp/pgcrypto. The `routing.road_network` table exists in your schema docs but there's no topology or actual OSM road data loaded — matches what you're mid-way through rebuilding.
+- **Map**: Leaflet + CARTO raster tiles (light/dark), clustered markers, a facility-name-only search (`suggestFacilities`). Solid foundation, but raster tiles cap how detailed/interactive it can get.
+
+## Part A — Routing intelligence (Bolt/Uber-style)
+
+1. **Get off the OSRM public demo server.** It's rate-limited and has no SLA — fine for a prototype, not for anything real. Since you're already importing the Kenya road network into Supabase: enable the `pgrouting` extension (confirmed available in Supabase's dashboard under Database → Extensions), run `pgr_createTopology()` on your road network table, and expose `pgr_dijkstra`/`pgr_astar` via a Postgres function. Alternative: self-host OSRM/Valhalla in Docker against Kenya's `.osm.pbf`. Either way you get unlimited, low-latency routing you control instead of depending on someone else's demo server.
+
+2. **Live location tracking.** Swap `getCurrentPosition` for `navigator.geolocation.watchPosition`, and push updates through Supabase Realtime so ambulance position updates on the map without polling. This is the single biggest thing that separates "type start/end, get a line" from an actual Bolt/Uber feel.
+
+3. **Live ETA + auto-reroute.** Right now `estimated_minutes` is computed once and frozen in state. As position updates, recompute distance-to-destination continuously, and if the vehicle drifts off the route polyline, silently re-call `/smart/road-route`.
+
+4. **Active-step highlighting.** `Sidebar.jsx` already renders OSRM's `steps` as a static list. `_parse_osrm_steps()` in `smart_routing.py` currently discards `maneuver.location` — capture it, then compare it to live GPS to auto-advance "next turn" like a real nav app.
+
+5. **Alternate routes.** OSRM supports `alternatives=true` and you're not requesting it. Add it, surface 2-3 route cards ("fastest" vs "avoids this road") the way Uber shows route options.
+
+6. **Smooth marker animation.** Interpolate the vehicle icon between GPS pings (tween via `requestAnimationFrame`) instead of snapping — small change, big perceived-quality jump.
+
+7. **Dispatcher view.** Since this is emergency/health routing rather than literal rideshare, the higher-value version of "multiple drivers on a map" is a dispatcher screen showing all ambulances' live status (available / en route / at scene).
+
+## Part B — Map detail (Google Maps-style)
+
+1. **Vector tiles (MapLibre GL JS)** instead of raster CARTO tiles. This is the biggest single visual upgrade — crisp labels at any zoom, toggleable layers, smooth tilt/rotation. Free options that fit a student budget: OpenFreeMap, Protomaps (self-hosted `.pmtiles`, no per-request cost), or MapTiler's free tier.
+
+2. **Real geocoding.** `suggestFacilities` only matches your own facility dataset. Add a geocoder (self-hosted Nominatim, or OpenCage/Mapbox free tier) so someone can type "Ngong Road" or "near Naivasha bus stop" and get a pin — not just a facility name.
+
+3. **Satellite/hybrid toggle.** Genuinely useful in Kenya where facilities are often described by landmark, not address. Esri World Imagery or MapTiler satellite as a third tile option next to your light/dark toggle.
+
+4. **Traffic-aware coloring.** Hardest one for Kenya — no great free traffic feed — but Mapbox's traffic tiles do cover Nairobi/Mombasa reasonably. Layer it in for urban routes, plain roads elsewhere.
+
+5. **Richer route rendering.** Your double-stroke `Polyline` in `MapView.jsx` already reads well as "a road" — add directional chevrons/animated dash, and shade the already-traveled segment differently from what's remaining.
+
+6. **POI/landmark layer.** Fuel stations, matatu stages, markets from OSM as route context — matters more on unsigned rural roads than it would in a city.
+
+7. **Draggable destination pin.** Right now the destination is only set by clicking a facility or search result. A draggable "exact emergency location" pin would materially improve dispatch accuracy, since the patient's real spot rarely matches GPS exactly.
+
+## Suggested order
+
+1. pgRouting migration — kills the OSRM demo-server dependency (you're already mid-way through the schema work for this)
+2. Live tracking + live ETA — the one that actually makes it *feel* like Bolt/Uber
+3. Vector tiles + real geocoding — biggest visual jump toward Google Maps
+4. Alternate routes, active-step highlighting, marker animation — polish
+5. Traffic layer, satellite, POI layer, 3D — nice-to-have, last
+
+Want me to start on the pgRouting migration (SQL + FastAPI changes) or the live-tracking piece first?

@@ -15,6 +15,8 @@ from app.recommendation_engine import haversine
 router = APIRouter(prefix="/smart", tags=["Smart Routing"])
 
 AVG_SPEED_KMH = 40
+OSRM_BASE = "https://router.project-osrm.org/route/v1/driving"
+OSRM_HEADERS = {"User-Agent": "KHAP-Routing/1.0"}
 
 # ─── Turn-by-turn helpers ─────────────────────────────────────────────────────
 
@@ -58,14 +60,16 @@ _STEP_ICONS = {
 
 
 def _parse_osrm_steps(osrm_steps: list) -> list[dict]:
+    """Parse OSRM step list into structured turn-by-turn instructions.
+    Captures maneuver GPS location for active-step highlighting on the map."""
     steps = []
     for s in osrm_steps:
         m = s.get("maneuver", {})
-        mtype = m.get("type", "")
+        mtype    = m.get("type", "")
         modifier = m.get("modifier", "")
-        name = (s.get("name") or "").strip()
-        dist_km = round(s.get("distance", 0) / 1000, 2)
-        dur_min = round(s.get("duration", 0) / 60, 1)
+        name     = (s.get("name") or "").strip()
+        dist_km  = round(s.get("distance", 0) / 1000, 2)
+        dur_min  = round(s.get("duration", 0) / 60, 1)
 
         text = (
             _MANEUVER_TEXT.get((mtype, modifier))
@@ -75,18 +79,84 @@ def _parse_osrm_steps(osrm_steps: list) -> list[dict]:
         instruction = f"{text} {name}".strip() if name else text
 
         icon_map = _STEP_ICONS.get(mtype, {})
-        icon = icon_map.get(modifier) or icon_map.get("") or "↑"
+        icon     = icon_map.get(modifier) or icon_map.get("") or "↑"
+
+        # Capture the GPS location of this maneuver (lon, lat in OSRM)
+        loc = m.get("location")  # [lon, lat]
+        step_location = {"lat": loc[1], "lon": loc[0]} if loc and len(loc) >= 2 else None
 
         steps.append({
             "instruction": instruction,
             "distance_km": dist_km,
             "duration_min": dur_min,
-            "type": mtype,
-            "modifier": modifier,
-            "icon": icon,
-            "name": name,
+            "type":         mtype,
+            "modifier":     modifier,
+            "icon":         icon,
+            "name":         name,
+            "location":     step_location,   # ← GPS of this turn/maneuver
         })
     return steps
+
+
+def _parse_osrm_route(r: dict) -> dict:
+    """Convert one OSRM route object into our standard format."""
+    legs = r.get("legs", [{}])
+    steps = _parse_osrm_steps(legs[0].get("steps", []) if legs else [])
+    return {
+        "distance_km":      round(r["distance"] / 1000, 2),
+        "duration_minutes": round(r["duration"] / 60),
+        "geometry":         r["geometry"],
+        "steps":            steps,
+    }
+
+
+def _osrm_route(from_lon, from_lat, to_lon, to_lat, alternatives=False, timeout=8):
+    """
+    Call OSRM and return parsed routes list, or None on failure.
+    When alternatives=True, returns up to 3 route options.
+    """
+    try:
+        resp = httpx.get(
+            f"{OSRM_BASE}/{from_lon},{from_lat};{to_lon},{to_lat}",
+            params={
+                "overview":     "full",
+                "geometries":   "geojson",
+                "steps":        "true",
+                "annotations":  "false",
+                "alternatives": "true" if alternatives else "false",
+            },
+            timeout=timeout,
+            headers=OSRM_HEADERS,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == "Ok" and data.get("routes"):
+                return [_parse_osrm_route(r) for r in data["routes"][:3]]
+    except Exception:
+        pass
+    return None
+
+
+def _osrm_summary(from_lon, from_lat, to_lon, to_lat, timeout=5):
+    """Lightweight OSRM call for road distance + duration only (no geometry/steps)."""
+    try:
+        resp = httpx.get(
+            f"{OSRM_BASE}/{from_lon},{from_lat};{to_lon},{to_lat}",
+            params={"overview": "false", "steps": "false"},
+            timeout=timeout,
+            headers=OSRM_HEADERS,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == "Ok" and data.get("routes"):
+                r = data["routes"][0]
+                return {
+                    "road_km":  round(r["distance"] / 1000, 2),
+                    "dur_min":  round(r["duration"] / 60),
+                }
+    except Exception:
+        pass
+    return None
 
 
 def _resolve_coords(lat, lon, location):
@@ -231,7 +301,7 @@ def _match_reason(facility: dict, emergency_type: str, cfg: dict) -> str:
     return " · ".join(reasons) if reasons else "General facility"
 
 
-# ─── Road Routing (OSRM) with turn-by-turn ───────────────────────────────────
+# ─── Road Routing (OSRM) with turn-by-turn + alternatives ────────────────────
 
 @router.get("/road-route")
 def road_route(
@@ -241,56 +311,47 @@ def road_route(
     to_lon: float = Query(...),
 ):
     """
-    Real road route using the OSRM public demo server with full turn-by-turn steps.
-    Falls back to a straight-line estimate if OSRM is unavailable.
+    Real road route via OSRM with full turn-by-turn steps and GPS locations
+    per step (for active-step highlighting). Returns up to 3 alternate routes.
+    Falls back to straight-line estimate if OSRM is unavailable.
     """
-    try:
-        url = (
-            f"https://router.project-osrm.org/route/v1/driving/"
-            f"{from_lon},{from_lat};{to_lon},{to_lat}"
-        )
-        resp = httpx.get(
-            url,
-            params={
-                "overview": "full",
-                "geometries": "geojson",
-                "steps": "true",
-                "annotations": "false",
-            },
-            timeout=10,
-            headers={"User-Agent": "KHAP-Routing/1.0"},
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("code") == "Ok" and data.get("routes"):
-                r = data["routes"][0]
-                legs = r.get("legs", [{}])
-                steps = _parse_osrm_steps(legs[0].get("steps", []) if legs else [])
-                return {
-                    "source": "osrm",
-                    "distance_km": round(r["distance"] / 1000, 2),
-                    "duration_minutes": round(r["duration"] / 60),
-                    "geometry": r["geometry"],
-                    "steps": steps,
-                }
-    except Exception:
-        pass
+    routes = _osrm_route(from_lon, from_lat, to_lon, to_lat, alternatives=True)
 
-    dist = haversine(from_lat, from_lon, to_lat, to_lon)
+    if routes:
+        main = routes[0]
+        return {
+            "source":   "osrm",
+            "routes":   routes,         # all routes (main + alternates)
+            # top-level fields mirror the main route for backward compatibility
+            "distance_km":      main["distance_km"],
+            "duration_minutes": main["duration_minutes"],
+            "geometry":         main["geometry"],
+            "steps":            main["steps"],
+        }
+
+    # Straight-line fallback
+    dist    = haversine(from_lat, from_lon, to_lat, to_lon)
     road_km = round(dist * 1.35, 2)
     dur_min = round((road_km / AVG_SPEED_KMH) * 60)
-    return {
-        "source": "estimate",
-        "distance_km": road_km,
+    fallback_route = {
+        "distance_km":      road_km,
         "duration_minutes": dur_min,
         "geometry": {
             "type": "LineString",
             "coordinates": [[from_lon, from_lat], [to_lon, to_lat]],
         },
         "steps": [
-            {"instruction": f"Estimated road route ({road_km} km)", "distance_km": road_km, "duration_min": dur_min, "type": "depart", "icon": "↑", "name": ""},
-            {"instruction": "Arrive at your destination", "distance_km": 0, "duration_min": 0, "type": "arrive", "icon": "🏥", "name": ""},
+            {"instruction": f"Estimated road route ({road_km} km)", "distance_km": road_km, "duration_min": dur_min, "type": "depart", "icon": "↑", "name": "", "location": {"lat": from_lat, "lon": from_lon}},
+            {"instruction": "Arrive at your destination", "distance_km": 0, "duration_min": 0, "type": "arrive", "icon": "🏥", "name": "", "location": {"lat": to_lat, "lon": to_lon}},
         ],
+    }
+    return {
+        "source":           "estimate",
+        "routes":           [fallback_route],
+        "distance_km":      road_km,
+        "duration_minutes": dur_min,
+        "geometry":         fallback_route["geometry"],
+        "steps":            fallback_route["steps"],
     }
 
 
@@ -301,8 +362,11 @@ def nearest_facility(
     emergency_type: str = Query("general"),
     limit: int = Query(1, ge=1, le=5),
 ):
-    """Find the nearest facility and return its road route in one call."""
-    cfg = EMERGENCY_CAPABILITIES.get(emergency_type, EMERGENCY_CAPABILITIES["general"])
+    """
+    Find the nearest facility and return real road ETAs via OSRM.
+    Uses OSRM summary calls (no geometry) for speed — falls back to ×1.35 estimate.
+    """
+    cfg       = EMERGENCY_CAPABILITIES.get(emergency_type, EMERGENCY_CAPABILITIES["general"])
     preferred = cfg.get("preferred_types")
 
     rows = fetch_all(filters={"operational_status": "Operational"})
@@ -311,28 +375,38 @@ def nearest_facility(
         if f.get("latitude") is not None and f.get("longitude") is not None
         and (not preferred or f.get("type") in preferred)
     ]
-
     if not candidates:
         candidates = [f for f in rows if f.get("latitude") is not None and f.get("longitude") is not None]
-
     if not candidates:
         raise HTTPException(404, "No facilities found.")
 
     scored = sorted(
         candidates,
         key=lambda f: haversine(lat, lon, f["latitude"], f["longitude"])
-    )[:limit]
+    )[:max(limit, 5)]   # fetch a few extra to try OSRM on top candidates
 
     results = []
     for f in scored[:limit]:
         dist = haversine(lat, lon, f["latitude"], f["longitude"])
-        road_km = round(dist * 1.35, 2)
         enrich_facility(f)
+
+        # Try OSRM for real road distance + time
+        osrm = _osrm_summary(lon, lat, f["longitude"], f["latitude"])
+        if osrm:
+            road_km = osrm["road_km"]
+            dur_min = osrm["dur_min"]
+            eta_source = "osrm"
+        else:
+            road_km = round(dist * 1.35, 2)
+            dur_min = round((road_km / AVG_SPEED_KMH) * 60)
+            eta_source = "estimate"
+
         results.append({
             **f,
-            "distance_km": round(dist, 2),
-            "estimated_road_km": road_km,
-            "estimated_minutes": round((road_km / AVG_SPEED_KMH) * 60),
+            "distance_km":        round(dist, 2),
+            "estimated_road_km":  road_km,
+            "estimated_minutes":  dur_min,
+            "eta_source":         eta_source,
         })
 
     return {"results": results, "total": len(results)}
@@ -362,35 +436,35 @@ def population_served(
 
     within.sort(key=lambda x: x["distance_km"])
 
-    area_km2 = 3.14159 * radius_km ** 2
+    area_km2       = 3.14159 * radius_km ** 2
     est_population = round(area_km2 * 100)
 
-    operational = [f for f in within if f.get("operational_status") == "Operational"]
+    operational    = [f for f in within if f.get("operational_status") == "Operational"]
     total_capacity = sum((f.get("beds") or 0) + (f.get("cots") or 0) for f in operational)
 
     if operational:
-        beds_per_1000 = round((total_capacity / est_population) * 1000, 2) if est_population else 0
+        beds_per_1000       = round((total_capacity / est_population) * 1000, 2) if est_population else 0
         people_per_facility = round(est_population / len(operational))
     else:
-        beds_per_1000 = 0
+        beds_per_1000       = 0
         people_per_facility = est_population
 
     who_benchmark = 10
     status = "Above WHO benchmark" if beds_per_1000 >= who_benchmark else "Below WHO benchmark"
 
     return {
-        "centre": resolved_label or {"latitude": lat, "longitude": lon},
+        "centre":   resolved_label or {"latitude": lat, "longitude": lon},
         "radius_km": radius_km,
         "catchment": {
-            "estimated_population": est_population,
-            "area_km2": round(area_km2, 1),
-            "total_facilities": len(within),
-            "operational_facilities": len(operational),
-            "total_beds_cots": total_capacity,
-            "beds_per_1000_people": beds_per_1000,
-            "people_per_facility": people_per_facility,
+            "estimated_population":        est_population,
+            "area_km2":                    round(area_km2, 1),
+            "total_facilities":            len(within),
+            "operational_facilities":      len(operational),
+            "total_beds_cots":             total_capacity,
+            "beds_per_1000_people":        beds_per_1000,
+            "people_per_facility":         people_per_facility,
             "who_beds_benchmark_per_1000": who_benchmark,
-            "benchmark_status": status,
+            "benchmark_status":            status,
         },
         "nearest_facilities": [
             {
