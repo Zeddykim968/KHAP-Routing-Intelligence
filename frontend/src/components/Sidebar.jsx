@@ -34,6 +34,14 @@ export default function Sidebar({
   onSmartResults, liveEta, activeStepIdx,
 }) {
   const [travelInfo, setTravelInfo]     = useState(null);
+  // Each route-fetching flow (get route / route-to / route-finder) owns its
+  // own request counter so a newer request in one flow never silently skips
+  // the cleanup (loading/error/routingFacility reset) of an in-flight request
+  // from a *different* flow — each guards only against being superseded by
+  // its own later call.
+  const getRouteReqIdRef                = useRef(0);
+  const routeToReqIdRef                 = useRef(0);
+  const routeFinderReqIdRef             = useRef(0);
   const [coverageInfo, setCoverageInfo] = useState(null);
   const [countyReport, setCountyReport] = useState(null);
   const [rankings, setRankings]         = useState(null);
@@ -198,14 +206,17 @@ export default function Sidebar({
 
   async function handleGetRoute() {
     if (!userLocation || !selectedFacility) return;
+    const reqId = ++getRouteReqIdRef.current;
     setLoading(true); setError(null); setShowSteps(false);
     try {
       const r = await fetchRoadRoute(
         userLocation.lat, userLocation.lon,
         selectedFacility.latitude, selectedFacility.longitude
       );
+      if (reqId !== getRouteReqIdRef.current) return; // a newer "get route" request superseded this one
       _applyRoute(r, selectedFacility);
-    } catch (e) { setError(e.message); } finally { setLoading(false); }
+    } catch (e) { if (reqId === getRouteReqIdRef.current) setError(e.message); }
+    finally { if (reqId === getRouteReqIdRef.current) setLoading(false); }
   }
 
   async function handleCoverage() {
@@ -234,6 +245,7 @@ export default function Sidebar({
 
   async function handleRouteTo(facility) {
     if (!userLocation) return;
+    const reqId = ++routeToReqIdRef.current;
     setRoutingFacility(facility.facility_id);
     setTravelInfo(null);
     try {
@@ -241,8 +253,10 @@ export default function Sidebar({
         userLocation.lat, userLocation.lon,
         facility.latitude, facility.longitude
       );
+      if (reqId !== routeToReqIdRef.current) return; // a newer "route to" request superseded this one
       _applyRoute(r, facility);
-    } catch (e) { console.error(e); } finally { setRoutingFacility(null); }
+    } catch (e) { if (reqId === routeToReqIdRef.current) console.error(e); }
+    finally { if (reqId === routeToReqIdRef.current) setRoutingFacility(null); }
   }
 
   // ── Route Finder: search any facility (or free-text place) and route ────
@@ -290,14 +304,16 @@ export default function Sidebar({
     setRouteSearchLoading(true);
     setRouteSearchError(null);
     setRoutingFacility(sug.facility_id);
+    const reqId = ++routeFinderReqIdRef.current;
     try {
       const r = await fetchRoadRoute(
         userLocation.lat, userLocation.lon,
         sug.latitude, sug.longitude
       );
+      if (reqId !== routeFinderReqIdRef.current) return; // a newer route-finder request superseded this one
       _applyRoute(r, sug);
-    } catch (e) { setRouteSearchError(e.message); }
-    finally { setRouteSearchLoading(false); setRoutingFacility(null); }
+    } catch (e) { if (reqId === routeFinderReqIdRef.current) setRouteSearchError(e.message); }
+    finally { if (reqId === routeFinderReqIdRef.current) { setRouteSearchLoading(false); setRoutingFacility(null); } }
   }
 
   async function handleNearestHospital() {

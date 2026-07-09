@@ -380,13 +380,17 @@ def nearest_facility(
     if not candidates:
         raise HTTPException(404, "No facilities found.")
 
-    scored = sorted(
+    # Pre-cut by straight-line distance to bound how many OSRM calls we make,
+    # but pull a generous pool so the *actual* road-nearest facility (which can
+    # differ from the haversine-nearest one due to road layout, rivers, etc.)
+    # is still in the candidate set we rank by real road distance.
+    haversine_pool = sorted(
         candidates,
         key=lambda f: haversine(lat, lon, f["latitude"], f["longitude"])
-    )[:max(limit, 5)]   # fetch a few extra to try OSRM on top candidates
+    )[:max(limit * 3, 8)]
 
-    results = []
-    for f in scored[:limit]:
+    scored = []
+    for f in haversine_pool:
         dist = haversine(lat, lon, f["latitude"], f["longitude"])
         enrich_facility(f)
 
@@ -401,13 +405,19 @@ def nearest_facility(
             dur_min = round((road_km / AVG_SPEED_KMH) * 60)
             eta_source = "estimate"
 
-        results.append({
+        scored.append({
             **f,
             "distance_km":        round(dist, 2),
             "estimated_road_km":  road_km,
             "estimated_minutes":  dur_min,
             "eta_source":         eta_source,
         })
+
+    # Rank by real road distance (falls back to the estimate when OSRM failed),
+    # not the straight-line distance — the nearest by road isn't always the
+    # nearest as-the-crow-flies.
+    scored.sort(key=lambda f: f["estimated_road_km"])
+    results = scored[:limit]
 
     return {"results": results, "total": len(results)}
 
