@@ -183,13 +183,15 @@ export default function Sidebar({
     const chosen = travelInfo.routes[idx];
     if (!chosen) return;
     setActiveAltIdx(idx);
-    // Push the chosen route geometry/steps to the map but keep destination
-    onRouteSet({
+    const updated = {
       ...travelInfo,
       ...chosen,                  // override distance/duration/geometry/steps
       routes: travelInfo.routes,  // keep full routes array
       destination: travelInfo.destination,
-    });
+    };
+    // Keep the sidebar summary/steps in sync with whichever route is shown on the map
+    setTravelInfo(updated);
+    onRouteSet(updated);
   }
 
   // ── Async actions ────────────────────────────────────────────────────────
@@ -343,16 +345,18 @@ export default function Sidebar({
 
     return (
       <div>
-        {/* ── Live ETA ── */}
-        {liveEta ? (
-          <div style={{ ...s.infoBox("#1e3a5f", "#dbeafe"), borderLeft: "3px solid #3b82f6" }}>
-            📡 <strong style={{ color: "#60a5fa" }}>Live:</strong> {liveEta.km} km · {liveEta.minutes} min remaining
-          </div>
-        ) : (
-          <div style={s.infoBox()}>
-            🚗 <strong>{travelInfo.distance_km} km</strong> road distance<br />
-            ⏱ <strong>{travelInfo.duration_minutes} min</strong> drive time<br />
-            📡 {travelInfo.source === "osrm" ? "Live routing via OpenStreetMap" : "Straight-line estimate (×1.35)"}
+        {/* ── Route summary: always show the real routed distance/time first ── */}
+        <div style={s.infoBox()}>
+          🚗 <strong>{travelInfo.distance_km} km</strong> road distance<br />
+          ⏱ <strong>{travelInfo.duration_minutes} min</strong> drive time<br />
+          📡 {travelInfo.source === "osrm" ? "Live routing via OpenStreetMap" : "Straight-line estimate (×1.35)"}
+        </div>
+
+        {/* ── Live ETA: only shown as a supplementary "remaining distance" while moving,
+             never replaces the accurate routed distance above ── */}
+        {liveEta && (
+          <div style={{ ...s.infoBox("#1e3a5f", "#dbeafe"), borderLeft: "3px solid #3b82f6", marginTop: 4 }}>
+            📡 <strong style={{ color: "#60a5fa" }}>Live:</strong> {liveEta.km} km · {liveEta.minutes} min remaining (straight-line estimate)
           </div>
         )}
 
