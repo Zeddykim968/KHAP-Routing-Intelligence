@@ -1,6 +1,6 @@
 """
 Supabase client — sole database for KHAP.
-Uses the service role key to bypass Row Level Security on the facilities table.
+Uses the service role key to bypass Row Level Security on the health_facilities table.
 """
 
 import os
@@ -35,13 +35,13 @@ def get_client() -> Client:
 
 def fetch_all(columns: str = "*", filters: dict | None = None) -> list[dict]:
     """
-    Fetch all rows from the facilities table with optional equality filters.
+    Fetch all rows from the health_facilities table with optional equality filters.
     Paginates automatically through Supabase's 1,000-row default limit.
     """
     all_rows: list[dict] = []
     offset = 0
     while True:
-        q = supabase.table("facilities").select(columns).range(offset, offset + PAGE_SIZE - 1)
+        q = supabase.table("health_facilities").select(columns).range(offset, offset + PAGE_SIZE - 1)
         if filters:
             for key, val in filters.items():
                 if val is not None:
@@ -58,7 +58,7 @@ def fetch_all(columns: str = "*", filters: dict | None = None) -> list[dict]:
 def fetch_one(facility_id: int) -> dict | None:
     """Fetch a single facility by integer ID."""
     result = (
-        supabase.table("facilities")
+        supabase.table("health_facilities")
         .select("*")
         .eq("facility_id", facility_id)
         .limit(1)
@@ -70,7 +70,7 @@ def fetch_one(facility_id: int) -> dict | None:
 
 def search_ilike(column: str, term: str, operational_only: bool = True, limit: int = 50) -> list[dict]:
     """Case-insensitive substring search on a single column."""
-    q = supabase.table("facilities").select("*").ilike(column, f"%{term}%").limit(limit)
+    q = supabase.table("health_facilities").select("*").ilike(column, f"%{term}%").limit(limit)
     if operational_only:
         q = q.eq("operational_status", "Operational")
     result = q.execute()
