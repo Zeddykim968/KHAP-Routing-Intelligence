@@ -179,69 +179,31 @@ export default function MapView({
         layout: { visibility: "none" },
       }, map.getStyle().layers[0]?.id);
 
-      // Facilities cluster source
+      // Facilities source — NOT clustered: every hospital gets its own exact
+      // lat/lon pin at every zoom level, so the map always shows precise
+      // locations rather than a county-level count bubble.
       map.addSource("facilities-src", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
-        cluster: true,
-        clusterRadius: 50,
-        clusterMaxZoom: 13,
       });
 
-      map.addLayer({
-        id: "clusters",
-        type: "circle",
-        source: "facilities-src",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": [
-            "step", ["get", "point_count"],
-            "#10b981", 10, "#3b82f6", 100, "#ef4444",
-          ],
-          "circle-radius": ["step", ["get", "point_count"], 14, 10, 17, 100, 21],
-          "circle-stroke-width": 2.5,
-          "circle-stroke-color": "rgba(255,255,255,0.85)",
-          "circle-opacity": 0.92,
-        },
-      });
-      map.addLayer({
-        id: "cluster-count",
-        type: "symbol",
-        source: "facilities-src",
-        filter: ["has", "point_count"],
-        layout: {
-          "text-field": ["get", "point_count_abbreviated"],
-          "text-font": ["Noto Sans Bold"],
-          "text-size": 12,
-        },
-        paint: { "text-color": "#ffffff" },
-      });
       map.addLayer({
         id: "facility-points",
         type: "circle",
         source: "facilities-src",
-        filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-color": buildMatchExpr(FACILITY_COLORS),
           "circle-radius": [
-            "case",
-            ["get", "selected"], 11,
-            ["get", "isTop"], 8,
-            5,
+            "interpolate", ["linear"], ["zoom"],
+            5, ["case", ["get", "selected"], 6, ["get", "isTop"], 4.5, 3],
+            10, ["case", ["get", "selected"], 12, ["get", "isTop"], 8, 5],
+            16, ["case", ["get", "selected"], 16, ["get", "isTop"], 11, 8],
           ],
           "circle-stroke-width": ["case", ["get", "isTop"], 2.5, 1.5],
-          "circle-stroke-color": "rgba(255,255,255,0.8)",
+          "circle-stroke-color": "rgba(255,255,255,0.85)",
         },
       });
 
-      map.on("click", "clusters", (e) => {
-        const features = map.queryRenderedFeatures(e.point, { layers: ["clusters"] });
-        const clusterId = features[0].properties.cluster_id;
-        map.getSource("facilities-src").getClusterExpansionZoom(clusterId, (err, zoom) => {
-          if (err) return;
-          map.easeTo({ center: features[0].geometry.coordinates, zoom });
-        });
-      });
       map.on("click", "facility-points", (e) => {
         const f = e.features[0].properties;
         onSelectRef.current?.(f);
@@ -252,8 +214,6 @@ export default function MapView({
       });
       map.on("mouseenter", "facility-points", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "facility-points", () => (map.getCanvas().style.cursor = ""));
-      map.on("mouseenter", "clusters", () => (map.getCanvas().style.cursor = "pointer"));
-      map.on("mouseleave", "clusters", () => (map.getCanvas().style.cursor = ""));
 
       // Route sources/layers
       const emptyLine = { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} };
@@ -630,8 +590,7 @@ function Legend({ activeLayer, theme, smartResults }) {
         <div key={l} style={row}><div style={dot(c)} />{l}</div>
       ))}
       <div style={{ ...row, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${dark ? "#374151" : "#e5e7eb"}`, color: "#6b7280", fontSize: 10 }}>
-        <div style={{ background: "#3b82f6", color: "#fff", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 9 }}>12</div>
-        Cluster (zoom in)
+        Every dot is an exact facility location — zoom in for detail
       </div>
     </div>
   );
