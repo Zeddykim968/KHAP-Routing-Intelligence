@@ -4,6 +4,8 @@ uvicorn[standard]
 python-dotenv
 pydantic[email]
 python-multipart
+asyncpg
+pydantic-settings
 
 # ── Supabase (sole database) ───────────────────────────────────────────────────
 supabase
