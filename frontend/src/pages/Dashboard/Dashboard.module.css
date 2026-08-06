@@ -1,0 +1,107 @@
+.layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 340px;
+  min-width: 280px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #f9fafb;
+  border-right: 1px solid #e5e7eb;
+}
+
+.sidebarHeader {
+  padding: 16px 16px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.hint {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.facilityList {
+  padding: 8px 0;
+}
+
+.listLabel {
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.facilityItem {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.facilityItem:hover {
+  background: #eff6ff;
+}
+
+.facilityItem.active {
+  background: #dbeafe;
+  border-left: 3px solid #2563eb;
+}
+
+.facilityName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.facilityMeta {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.mapWrapper {
+  flex: 1;
+  position: relative;
+}
+
+@media (max-width: 640px) {
+  .layout {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    max-width: 100%;
+    max-height: 40vh;
+  }
+}

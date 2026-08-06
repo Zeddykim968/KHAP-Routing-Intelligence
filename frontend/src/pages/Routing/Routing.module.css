@@ -1,0 +1,112 @@
+.page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.panel {
+  width: 340px;
+  min-width: 280px;
+  padding: 16px;
+  overflow-y: auto;
+  background: #f9fafb;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heading {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 8px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.searchRow {
+  display: flex;
+  gap: 8px;
+}
+
+.input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.btn {
+  padding: 8px 14px;
+  background: #e5e7eb;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.result {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+}
+
+.result:hover {
+  background: #eff6ff;
+}
+
+.result.selected {
+  background: #dbeafe;
+}
+
+.result span {
+  color: #6b7280;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.routeBtn {
+  margin-top: 8px;
+  padding: 10px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.routeBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.error {
+  font-size: 13px;
+  color: #dc2626;
+  margin: 0;
+}
+
+.mapWrapper {
+  flex: 1;
+}

@@ -3,30 +3,22 @@ fastapi
 uvicorn[standard]
 python-dotenv
 pydantic[email]
-python-multipart
-asyncpg
 pydantic-settings
+python-multipart
 
-# ── Supabase (sole database) ───────────────────────────────────────────────────
-supabase
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy
+psycopg2-binary          # PostgreSQL driver
+geoalchemy2              # PostGIS geometry type support
+
+# ── HTTP (OSRM + external calls) ─────────────────────────────────────────────
 httpx
 
-# ── Spatial / numerical ───────────────────────────────────────────────────────
-numpy
-shapely
-geopy
-
-# ── Data ──────────────────────────────────────────────────────────────────────
-pandas
-
-# ── Auth (Phase 11 — not yet active) ─────────────────────────────────────────
+# ── Auth (Phase 5 — not yet active) ──────────────────────────────────────────
 python-jose[cryptography]
 passlib[bcrypt]
 
-# ── Rate limiting / caching (Phase 12 — not yet active) ──────────────────────
-slowapi
-cachetools
-
-# ── Testing (Phase 13 — not yet active) ──────────────────────────────────────
+# ── Testing ───────────────────────────────────────────────────────────────────
 pytest
 pytest-asyncio
+httpx                    # async test client

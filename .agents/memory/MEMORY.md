@@ -1,3 +1,3 @@
-- [KHAP Supabase table name](khap-supabase-table.md) — the facilities table is `public.facilities`; never `health_facilities` even if code says otherwise.
-- [KHAP frontend port config](khap-frontend-port.md) — dashboard dev port must match in both vite.config.js and package.json's `dev` script, or the workflow fails to bind.
-- [MapLibre GL + headless screenshots](khap-maplibre-webgl.md) — the app_preview screenshot tool's headless browser has no WebGL; MapLibre throws there but works fine in real browsers.
+- [KHAP new project structure](khap-structure.md) — full restructure to backend/app/, frontend/src/pages+components+services layout.
+- [KHAP Python package install](khap-python-packages.md) — must use `uv pip install --target /home/runner/workspace/.pythonlibs/lib/python3.13/site-packages`; pip and uv --system both fail in this Nix env.
+- [KHAP database schemas](khap-db-schemas.md) — gis.health_facilities and routing.edges/edges_vertices_pgr; DATABASE_URL env var required; local PG unreachable from Replit until exposed.

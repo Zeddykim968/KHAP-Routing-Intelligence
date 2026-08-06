@@ -1,0 +1,655 @@
+# KHAP - Kenya Health Access Platform
+
+> A geospatial healthcare routing platform built with PostgreSQL, PostGIS, FastAPI, React, and OSRM.
+
+---
+
+# Overview
+
+KHAP (Kenya Health Access Platform) is a full-stack GIS application that helps users discover healthcare facilities and calculate the shortest routes between them using OpenStreetMap data.
+
+The project combines:
+
+- **PostgreSQL + PostGIS** for storing spatial healthcare data.
+- **OSRM** for high-performance routing.
+- **FastAPI** as the backend service layer.
+- **React + Leaflet** for the web application.
+
+The objective is to create a scalable healthcare routing system capable of supporting future healthcare analytics and emergency response applications.
+
+---
+
+# Project Architecture
+
+```
+                   OpenStreetMap
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+     PostgreSQL                    OSRM Engine
+      + PostGIS                  (Routing Server)
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                      FastAPI
+                         │
+                     React UI
+```
+
+---
+
+# Technology Stack
+
+| Layer | Technology |
+|--------|------------|
+| Database | PostgreSQL 18 |
+| Spatial Database | PostGIS 3.6 |
+| Routing Engine | OSRM |
+| Backend | FastAPI |
+| ORM | SQLAlchemy |
+| Validation | Pydantic |
+| Frontend | React |
+| Mapping | Leaflet |
+| Routing Data | OpenStreetMap |
+| Operating System | WSL Ubuntu |
+
+---
+
+# Project Structure
+
+```
+KHAP/
+
+│
+├── backend/
+│
+├── frontend/
+│
+├── database/
+│
+├── osrm/
+│
+├── docs/
+│
+└── README.md
+```
+
+---
+
+# Database
+
+The database is divided into two schemas.
+
+## GIS Schema
+
+Contains healthcare information.
+
+### health_facilities
+
+Stores every healthcare facility imported from OpenStreetMap.
+
+Columns
+
+- id
+- name
+- facility_type
+- operator
+- phone
+- website
+- emergency
+- opening_hours
+- wheelchair
+- geom
+- vertex_id
+
+Purpose
+
+- Facility search
+- Nearest facility
+- Facility information
+- Spatial queries
+
+---
+
+## Routing Schema
+
+### edges
+
+Stores the road network.
+
+Important columns
+
+- id
+- source
+- target
+- cost
+- reverse_cost
+- highway
+- way
+
+Purpose
+
+- Road network
+- Graph generation
+- Routing
+
+---
+
+### edges_vertices_pgr
+
+Stores graph vertices used for routing.
+
+Purpose
+
+- Graph nodes
+- Connected road intersections
+- Network analysis
+
+---
+
+# Backend
+
+```
+backend/
+
+app/
+
+├── api/
+│
+├── database/
+│
+├── models/
+│
+├── schemas/
+│
+├── services/
+│
+├── core/
+│
+└── main.py
+```
+
+---
+
+## api/
+
+Contains all API endpoints.
+
+### facilities.py
+
+Responsible for:
+
+- List facilities
+- Facility details
+- Facility search
+- Nearest facilities
+
+Endpoints
+
+```
+GET /facilities
+
+GET /facilities/{id}
+
+GET /facilities/nearest
+```
+
+---
+
+### routing.py
+
+Responsible for:
+
+- Route requests
+- Route summaries
+- Route geometry
+
+Endpoints
+
+```
+GET /route
+```
+
+---
+
+### health.py
+
+Application health endpoint.
+
+```
+GET /health
+```
+
+---
+
+### search.py
+
+Search functionality.
+
+Supports
+
+- Name
+- Facility type
+- Operator
+
+---
+
+## database/
+
+### session.py
+
+Creates PostgreSQL connection.
+
+Responsibilities
+
+- Engine
+- Session
+- Connection Pool
+
+---
+
+### models.py
+
+Contains SQLAlchemy models.
+
+Models
+
+- HealthFacility
+- Edge
+
+---
+
+## schemas/
+
+Contains Pydantic models.
+
+Responsibilities
+
+- Request validation
+- Response validation
+
+Examples
+
+- FacilityResponse
+- RouteResponse
+
+---
+
+## services/
+
+Business logic lives here.
+
+### facility_service.py
+
+Responsible for
+
+- Query facilities
+- Nearest facility
+- Facility filtering
+
+---
+
+### routing_service.py
+
+Responsible for
+
+- Find nearest road vertex
+- Call OSRM
+- Return route
+
+---
+
+### osrm_service.py
+
+Responsible for communicating with OSRM.
+
+Functions
+
+- Calculate route
+- Travel distance
+- Travel duration
+
+---
+
+## core/
+
+Shared application configuration.
+
+### config.py
+
+Contains
+
+- Environment variables
+- Database URL
+- OSRM URL
+
+---
+
+### security.py
+
+Authentication
+
+Future
+
+- JWT
+- User authentication
+
+---
+
+## main.py
+
+Application entry point.
+
+Responsibilities
+
+- Start FastAPI
+- Register routers
+- Configure middleware
+
+---
+
+# Frontend
+
+```
+frontend/
+
+src/
+
+├── components/
+
+├── pages/
+
+├── services/
+
+├── App.jsx
+
+└── main.jsx
+```
+
+---
+
+## Pages
+
+### Dashboard
+
+Displays
+
+- Map
+- Search
+- Statistics
+
+---
+
+### Facilities
+
+Displays
+
+- Facility list
+- Facility details
+- Filters
+
+---
+
+### Routing
+
+Displays
+
+- Start facility
+- Destination
+- Route
+- Distance
+- Duration
+
+---
+
+## Components
+
+### Map
+
+Displays
+
+- Leaflet map
+- Facilities
+- Route geometry
+
+---
+
+### SearchBar
+
+Facility search.
+
+---
+
+### FacilityCard
+
+Displays
+
+- Name
+- Type
+- Contact
+- Website
+
+---
+
+### RouteSummary
+
+Displays
+
+- Distance
+- Travel time
+- Route statistics
+
+---
+
+## services/
+
+Contains API calls.
+
+### api.js
+
+Handles
+
+- FastAPI requests
+
+---
+
+### routing.js
+
+Handles
+
+- Route requests
+- Route responses
+
+---
+
+# OSRM
+
+Directory
+
+```
+osrm/
+
+├── data/
+
+├── profiles/
+```
+
+Responsibilities
+
+- Store Kenya OSM extract
+- Generate routing graph
+- Run routing server
+
+OSRM is responsible **only** for routing.
+
+It returns
+
+- Distance
+- Duration
+- Geometry
+
+---
+
+# API Endpoints
+
+## Health
+
+```
+GET /health
+```
+
+---
+
+## Facilities
+
+```
+GET /facilities
+
+GET /facilities/{id}
+
+GET /facilities/nearest
+```
+
+---
+
+## Search
+
+```
+GET /search
+```
+
+---
+
+## Routing
+
+```
+GET /route
+```
+
+Input
+
+- Start Latitude
+- Start Longitude
+- End Latitude
+- End Longitude
+
+Output
+
+- Distance
+- Duration
+- Route Geometry
+
+---
+
+# Application Workflow
+
+```
+User
+
+↓
+
+React
+
+↓
+
+FastAPI
+
+↓
+
+PostGIS
+
+↓
+
+OSRM
+
+↓
+
+JSON
+
+↓
+
+React
+
+↓
+
+Leaflet
+```
+
+---
+
+# Development Roadmap
+
+## Phase 1 – Database ✅
+
+- PostgreSQL
+- PostGIS
+- OpenStreetMap Import
+- Healthcare Facilities
+- Spatial Indexes
+
+---
+
+## Phase 2 – Backend
+
+- FastAPI
+- SQLAlchemy
+- CRUD APIs
+- Search
+- Swagger Documentation
+
+---
+
+## Phase 3 – Routing
+
+- WSL Ubuntu
+- OSRM Installation
+- Route API
+- Route Integration
+
+---
+
+## Phase 4 – Frontend
+
+- React
+- Leaflet
+- Search Interface
+- Route Visualization
+
+---
+
+## Phase 5 – Deployment
+
+- Linux Server
+- Nginx
+- HTTPS
+- Production Database
+
+---
+
+# Future Improvements
+
+- Ambulance routing
+- Multi-stop routing
+- Healthcare accessibility analysis
+- Travel-time isochrones
+- Emergency response optimization
+- Live traffic integration
+- Healthcare analytics dashboard
+
+---
+
+# License
+
+MIT License
+
+---
+
+# Author
+
+**Zedrick Kimutai Biwott**
+
+BSc Applied Statistics & Data Science
+
+The Co-operative University of Kenya
+
+Kenya

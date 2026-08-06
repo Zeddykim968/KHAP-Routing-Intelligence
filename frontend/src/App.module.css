@@ -1,0 +1,61 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f9fafb;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px;
+  height: 44px;
+  background: #1e3a5f;
+  flex-shrink: 0;
+}
+
+.brand {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.05em;
+  margin-right: 12px;
+}
+
+.navBtn {
+  padding: 6px 14px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.navBtn:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.navBtn.active {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  font-weight: 600;
+}
+
+.main {
+  flex: 1;
+  overflow: hidden;
+}

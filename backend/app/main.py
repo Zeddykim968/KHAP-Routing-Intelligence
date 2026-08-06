@@ -1,30 +1,48 @@
-"""
-App entrypoint. Wires up the DB pool lifecycle and the two routers.
-Nothing else lives here on purpose -- this project is scoped to
-search + routing only.
-"""
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import connect_db, close_db
-from app.routes import routing, search
 
+from app.core.config import settings
+from app.api import facilities, routing, search, health
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await connect_db()
-    yield
-    await close_db()
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    description=(
+        "Geospatial healthcare routing API for the Kenya Health Access Platform. "
+        "Powered by PostgreSQL + PostGIS for facility data and OSRM for road routing. "
+        "See /docs for the interactive Swagger UI."
+    ),
+)
 
-
-app = FastAPI(title="KHAP Routing API", lifespan=lifespan)
-
+# ── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten before production
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(routing.router)
+# ── Routers ───────────────────────────────────────────────────────────────────
+app.include_router(health.router)
+app.include_router(facilities.router)
 app.include_router(search.router)
+app.include_router(routing.router)
+
+
+@app.get("/", tags=["Meta"])
+def root():
+    return {
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "docs":    "/docs",
+        "health":  "/health",
+        "endpoints": {
+            "facilities":        "GET  /facilities",
+            "facility_detail":   "GET  /facilities/{id}",
+            "nearest":           "GET  /facilities/nearest?lon=&lat=",
+            "search":            "GET  /search?q=",
+            "route":             "POST /route",
+            "health":            "GET  /health",
+        },
+    }
