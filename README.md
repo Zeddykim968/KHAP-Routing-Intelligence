@@ -1,54 +1,47 @@
 # KHAP — Kenya Health Access Platform
 
-> A geospatial healthcare routing platform built with PostgreSQL, PostGIS, FastAPI, React, and OSRM.
+> A healthcare-finder and live-routing platform built with Django, Django REST Framework, Next.js, MapLibre GL, and OSRM.
 
 ---
 
 ## Overview
 
-KHAP helps users discover healthcare facilities across Kenya and calculate the shortest driving routes between them using OpenStreetMap data.
+KHAP helps people in Kenya find the nearest health facility from their location, see what services and insurance schemes each facility accepts, and get live turn-by-turn driving directions to it.
 
 The project combines:
 
-- **PostgreSQL + PostGIS** for storing and querying spatial healthcare data.
-- **OSRM** for high-performance road routing.
-- **FastAPI** as the backend service layer.
-- **React + Leaflet** for the web application.
+- **Django + Django REST Framework** for the API backend.
+- **SQLite by default / PostgreSQL via `DATABASE_URL`** — no PostGIS required (haversine + Python distance math), so it runs anywhere.
+- **OSRM** for road routing and turn-by-turn navigation steps.
+- **Next.js** for the web app: a Google-Maps-style interface with a MapLibre GL map, floating search, bottom sheet, filters, route HUD, live navigation mode, and dark mode.
 
 ---
 
 ## Architecture
 
 ```
-                   OpenStreetMap
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-     PostgreSQL                    OSRM Engine
-      + PostGIS                  (Routing Server)
-          │                             │
-          └──────────────┬──────────────┘
-                         │
-                      FastAPI
-                         │
-                      React UI
+                   Browser (Next.js — map + search + navigation UI)
+                                     │  /api/* (Next.js rewrites)
+                                     ▼
+                              Django + DRF
+                    (facilities, search, meta, route)
+                         │                    │
+                    SQLite/Postgres        OSRM Engine
+                    (facility data)     (road routing)
 ```
 
 ---
 
 ## Technology Stack
 
-| Layer            | Technology       |
-|------------------|------------------|
-| Database         | PostgreSQL 18    |
-| Spatial Database | PostGIS 3.6      |
-| Routing Engine   | OSRM             |
-| Backend          | FastAPI          |
-| ORM              | SQLAlchemy       |
-| Validation       | Pydantic         |
-| Frontend         | React            |
-| Mapping          | Leaflet          |
-| Routing Data     | OpenStreetMap    |
+| Layer          | Technology                       |
+|----------------|----------------------------------|
+| Backend        | Django 6 + Django REST Framework |
+| Database       | SQLite (default) / PostgreSQL    |
+| Routing Engine | OSRM (public demo by default)    |
+| Frontend       | Next.js (App Router)             |
+| Mapping        | MapLibre GL (CARTO styles)       |
+| Icons          | lucide-react                     |
 
 ---
 
@@ -58,153 +51,96 @@ The project combines:
 KHAP/
 │
 ├── backend/
-│   └── app/
-│       ├── api/
-│       │   ├── facilities.py    # GET /facilities  /facilities/{id}  /facilities/nearest
-│       │   ├── routing.py       # POST /route
-│       │   ├── search.py        # GET /search
-│       │   └── health.py        # GET /health
-│       │
-│       ├── database/
-│       │   ├── session.py       # SQLAlchemy engine + session + health check
-│       │   └── models.py        # HealthFacility, Edge ORM models
-│       │
-│       ├── schemas/
-│       │   ├── facility.py      # FacilityResponse, NearestFacilityResponse
-│       │   └── route.py         # RouteRequest, RouteResponse
-│       │
-│       ├── services/
-│       │   ├── facility_service.py   # PostGIS queries
-│       │   ├── osrm_service.py       # OSRM HTTP client
-│       │   └── routing_service.py    # Orchestrates routing + vertex snapping
-│       │
-│       ├── core/
-│       │   ├── config.py        # DATABASE_URL, OSRM_URL env vars
-│       │   └── security.py      # JWT auth (Phase 5 placeholder)
-│       │
-│       └── main.py              # FastAPI app, routers, CORS
+│   ├── manage.py
+│   ├── khap/                     # Django project (settings, urls, wsgi, asgi)
+│   └── facilities/               # Django app
+│       ├── models.py             # Service, Insurance, Facility
+│       ├── serializers.py
+│       ├── views.py              # /api/health/ /api/meta/ /api/facilities/ /api/search/ /api/route/
+│       ├── urls.py
+│       ├── services.py           # haversine, opening-hours parsing, OSRM client
+│       ├── admin.py
+│       ├── migrations/
+│       └── management/commands/seed_facilities.py   # 54 Kenyan facilities
 │
-├── frontend/
-│   └── src/
-│       ├── components/
-│       │   ├── Map/             # Leaflet map with markers + route polyline
-│       │   ├── SearchBar/       # Text + GPS search
-│       │   ├── FacilityCard/    # Facility info panel
-│       │   └── RouteSummary/    # Distance + duration display
-│       │
-│       ├── pages/
-│       │   ├── Dashboard/       # Main map view
-│       │   ├── Facilities/      # Browsable facility list with filters
-│       │   └── Routing/         # Facility-to-facility routing
-│       │
-│       ├── services/
-│       │   ├── api.js           # /facilities, /search, /health calls
-│       │   └── routing.js       # POST /route
-│       │
-│       ├── App.jsx              # Page router + nav bar
-│       └── main.jsx             # React entry point
+├── frontend/                     # Next.js web UI
+│   ├── app/                      # App Router pages + layout
+│   ├── components/               # Map, SearchBar, BottomSheet, FacilityCard, ...
+│   ├── lib/                      # API client, formatting helpers
+│   └── next.config.js            # rewrites /api/* → Django
 │
-├── database/
-│   └── README.md                # Schema setup (gis + routing schemas)
-│
-├── osrm/
-│   ├── data/                    # Kenya OSM extract + processed OSRM files
-│   ├── profiles/                # Lua routing profiles
-│   └── README.md                # OSRM setup and Docker commands
-│
-├── docs/
-│
-├── .env.example                 # Environment variable template
-├── requirements.txt             # Python dependencies
-└── README.md                    ← you are here
-```
-
----
-
-## Database
-
-Two schemas in a single PostgreSQL database.
-
-### gis schema — healthcare facilities
-
-```
-gis.health_facilities
-│
-├── id            SERIAL PRIMARY KEY
-├── name          TEXT
-├── facility_type TEXT
-├── operator      TEXT
-├── phone         TEXT
-├── website       TEXT
-├── emergency     TEXT
-├── opening_hours TEXT
-├── wheelchair    TEXT
-├── geom          GEOMETRY(Point, 4326)   ← PostGIS spatial column
-└── vertex_id     BIGINT                  ← links to routing graph
-```
-
-### routing schema — road network
-
-```
-routing.edges                        ← road segments
-├── id, source, target
-├── cost, reverse_cost
-├── highway, way
-
-routing.edges_vertices_pgr           ← graph nodes (intersections)
+├── database/                     # Legacy PostGIS schema notes
+├── osrm/                         # Local OSRM setup notes (Docker)
+├── requirements.txt
+├── .env.example
+└── README.md                     ← you are here
 ```
 
 ---
 
 ## API Endpoints
 
+All endpoints are prefixed with `/api`.
+
 ### Health
 
 ```
-GET /health
+GET /api/health/
 ```
+
+### Meta (filter options)
+
+```
+GET /api/meta/
+```
+
+Returns facility types, service catalogue, insurance schemes, and counties.
 
 ### Facilities
 
 ```
-GET  /facilities                       list all (paginated)
-GET  /facilities/{id}                  single facility
-GET  /facilities/nearest?lon=&lat=     N nearest by GPS
+GET /api/facilities/                       list (paginated; filterable)
+GET /api/facilities/{id}/                  single facility
+GET /api/facilities/nearest/?lat=&lon=&limit=N
 ```
 
-### Search
+Filters on `/api/facilities/`: `facility_type`, `county`, `town`, `service` (slug), `insurance` (slug), `emergency`, `wheelchair`, `search`, `open_now`.
+
+### Search (typeahead)
 
 ```
-GET  /search?q=&facility_type=&operator=
+GET /api/search/?q=aga&lat=-1.29&lon=36.82
 ```
 
 ### Routing
 
 ```
-POST /route
-Body: { start_lat, start_lon, end_lat, end_lon }
+POST /api/route/
+Body: { "start_lat": -1.29, "start_lon": 36.82, "end_lat": -1.30, "end_lon": 36.81 }
 
-Response: { distance_m, duration_s, route: [[lon,lat], ...] }
+Response: { distance_m, duration_s, geometry, route: [[lon,lat], ...], steps: [...] }
 ```
+
+Each step has an `instruction`, `name`, `distance_m`, `duration_s`, and location — used for turn-by-turn navigation.
 
 ---
 
 ## Application Workflow
 
 ```
-User
+User opens app → Next.js map loads (CARTO positron / dark-matter style)
  ↓
-React (Leaflet map + SearchBar)
+"Use my location" (GPS) or typed search
  ↓
-FastAPI (validates request)
+Django: /api/facilities/nearest/ (haversine) or /api/search/
  ↓
-PostGIS (nearest facility query via ST_Distance / KNN)
+Bottom sheet shows nearest facilities with distance + open/closed status
  ↓
-OSRM (road routing → distance + duration + geometry)
+Facility selected → services + accepted insurances shown
  ↓
-JSON response
+"Directions" → Django /api/route/ → OSRM (road route + turn-by-turn steps)
  ↓
-React + Leaflet (draws route polyline on map)
+Route drawn on map; live navigation mode tracks GPS (watchPosition) and re-routes
 ```
 
 ---
@@ -214,19 +150,23 @@ React + Leaflet (draws route polyline on map)
 ### 1. Backend
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Create a virtualenv and install dependencies
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
-# Configure environment
+# Configure environment (optional — SQLite works out of the box)
 cp .env.example .env
-# Edit .env with your DATABASE_URL and OSRM_URL
 
-# Run the API
-cd backend
-uvicorn app.main:app --reload --port 8000
+# Migrate + seed 54 Kenyan facilities
+.venv/bin/python backend/manage.py migrate
+.venv/bin/python backend/manage.py seed_facilities
+
+# Run the API on :8000
+.venv/bin/python backend/manage.py runserver 0.0.0.0:8000
 ```
 
-API docs at: http://localhost:8000/docs
+Health check: http://localhost:8000/api/health/
+Admin: http://localhost:8000/admin/ (create a superuser with `manage.py createsuperuser`)
 
 ### 2. Frontend
 
@@ -236,51 +176,37 @@ npm install
 npm run dev
 ```
 
-Dashboard at: http://localhost:5173
+App at http://localhost:3000. Next.js rewrites `/api/*` to the Django backend, so no extra configuration is needed. To point elsewhere, set `NEXT_PUBLIC_API_URL` in `frontend/.env.local`.
 
-### 3. OSRM (local, via Docker)
+### 3. Routing
 
-See `osrm/README.md` for the full setup.  
-Quick start with the public demo server (no setup required):
-
-```
-OSRM_URL=http://router.project-osrm.org
-```
+The default routing engine is the **public OSRM demo server** — no setup required. For production, run your own OSRM instance (see `osrm/README.md`) and set `OSRM_URL`.
 
 ---
 
 ## Environment Variables
 
-| Variable       | Description                            | Default                           |
-|----------------|----------------------------------------|-----------------------------------|
-| `DATABASE_URL` | PostgreSQL connection string           | `postgresql://postgres:...@localhost:5432/khap` |
-| `OSRM_URL`     | OSRM routing engine base URL           | `http://router.project-osrm.org`  |
-
-Set `VITE_API_URL` in `frontend/.env.local` if the backend runs on a non-default host.
-
----
-
-## Development Roadmap
-
-| Phase | Description                         | Status      |
-|-------|-------------------------------------|-------------|
-| 1     | Database (PostgreSQL + PostGIS)      | ✅ Complete  |
-| 2     | Backend (FastAPI + SQLAlchemy)       | ✅ Complete  |
-| 3     | Routing (OSRM integration)           | ✅ Complete  |
-| 4     | Frontend (React + Leaflet)           | ✅ Complete  |
-| 5     | Deployment (Linux + Nginx + HTTPS)   | 🔜 Planned  |
+| Variable                | Description                            | Default                              |
+|-------------------------|----------------------------------------|--------------------------------------|
+| `DATABASE_URL`          | PostgreSQL connection string           | *(unset → SQLite `db.sqlite3`)*      |
+| `DJANGO_SECRET_KEY`     | Django secret key                      | insecure dev default                 |
+| `DJANGO_DEBUG`          | Debug mode                             | `true`                               |
+| `DJANGO_ALLOWED_HOSTS`  | Comma-separated hosts                  | `*`                                  |
+| `CORS_ALLOWED_ORIGINS`  | Comma-separated CORS origins           | `*`                                  |
+| `OSRM_URL`              | OSRM routing engine base URL           | `http://router.project-osrm.org`     |
+| `NEXT_PUBLIC_API_URL`   | Frontend override for the API host     | `/api` (same-origin rewrite)         |
 
 ---
 
-## Future Improvements
+## Features
 
-- Ambulance routing
-- Multi-stop routing
-- Healthcare accessibility analysis
-- Travel-time isochrones
-- Emergency response optimization
-- Live traffic integration
-- Healthcare analytics dashboard
+- **Find nearest facilities** from GPS location or any searched place.
+- **Service & insurance transparency** — every facility lists its services (maternity, dialysis, ICU, surgery, ...) and accepted insurance (SHA, NHIF legacy, private insurers, cash/self-pay).
+- **Live routing** — road-accurate routes with turn-by-turn instructions via OSRM.
+- **Navigation mode** — live GPS tracking with automatic re-routing when you drift off route.
+- **Google-Maps-style UI** — floating search with typeahead, draggable snapping bottom sheet, filter chips, route HUD with ETA, place pins.
+- **Dark mode** — UI and map style switch together (CARTO positron ↔ dark-matter).
+- **Opening status** — open/closed detection from OSM-style opening hours.
 
 ---
 
@@ -292,7 +218,7 @@ MIT License
 
 ## Author
 
-**Zedrick Kimutai Biwott**  
-BSc Applied Statistics & Data Science  
-The Co-operative University of Kenya  
+**Zedrick Kimutai Biwott**
+BSc Applied Statistics & Data Science
+The Co-operative University of Kenya
 Kenya

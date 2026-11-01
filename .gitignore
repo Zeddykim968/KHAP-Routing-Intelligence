@@ -1,8 +1,13 @@
-.env 
-venv
+.env
+.venv/
+venv/
 
 __pycache__/
+*.py[cod]
+db.sqlite3
 
 node_modules/
+.next/
+out/
 
-__init__.py
+*.log

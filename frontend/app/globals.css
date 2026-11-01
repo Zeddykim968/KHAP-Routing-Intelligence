@@ -1,0 +1,148 @@
+/* ── KHAP global styles: theme tokens + resets ───────────────────────────── */
+
+:root {
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f8f9fa;
+  --panel-3: #f1f3f4;
+  --text: #202124;
+  --muted: #5f6368;
+  --border: #dadce0;
+  --accent: #1a73e8;
+  --accent-hover: #1765cc;
+  --accent-fg: #ffffff;
+  --accent-soft: #e8f0fe;
+  --accent-soft-fg: #174ea6;
+
+  --green: #188038;
+  --green-soft: #e6f4ea;
+  --red: #d93025;
+  --red-soft: #fce8e6;
+  --amber: #b06000;
+  --amber-soft: #fef7e0;
+  --purple: #9334e6;
+  --teal: #007b83;
+  --pink: #d01884;
+
+  --shadow-1: 0 1px 3px rgba(60, 64, 67, 0.15), 0 4px 8px rgba(32, 33, 36, 0.1);
+  --shadow-2: 0 2px 6px 2px rgba(60, 64, 67, 0.15), 0 1px 3px rgba(60, 64, 67, 0.3);
+  --shadow-sheet: 0 -4px 18px rgba(32, 33, 36, 0.18);
+
+  --route: #1a73e8;
+  --route-casing: #ffffff;
+  --puck: #1a73e8;
+  --pin-border: #ffffff;
+
+  --banner: #137333;
+  --banner-fg: #ffffff;
+  --scrim: rgba(32, 33, 36, 0.55);
+
+  --focus-ring: 0 0 0 3px rgba(26, 115, 232, 0.35);
+}
+
+[data-theme="dark"] {
+  --bg: #1f1f1f;
+  --panel: #282a2e;
+  --panel-2: #303236;
+  --panel-3: #35383d;
+  --text: #e8eaed;
+  --muted: #9aa0a6;
+  --border: #3c4043;
+  --accent: #8ab4f8;
+  --accent-hover: #aecbfa;
+  --accent-fg: #202124;
+  --accent-soft: #394457;
+  --accent-soft-fg: #d2e3fc;
+
+  --green: #81c995;
+  --green-soft: #263238;
+  --red: #f28b82;
+  --red-soft: #3c2a28;
+  --amber: #fdd663;
+  --amber-soft: #3a3324;
+  --purple: #d7aefb;
+  --teal: #78d9ec;
+  --pink: #ff8ab3;
+
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 10px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 2px 8px 3px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-sheet: 0 -4px 20px rgba(0, 0, 0, 0.5);
+
+  --route: #8ab4f8;
+  --route-casing: #17181a;
+  --puck: #8ab4f8;
+  --pin-border: #202124;
+
+  --banner: #1b5e20;
+  --banner-fg: #ffffff;
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  --focus-ring: 0 0 0 3px rgba(138, 180, 248, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+input {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Thin scrollbars for panels */
+.khap-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.khap-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.khap-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

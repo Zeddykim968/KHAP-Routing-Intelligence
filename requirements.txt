@@ -1,24 +1,9 @@
-# ── Core API ──────────────────────────────────────────────────────────────────
-fastapi
-uvicorn[standard]
+# ── Backend (Django + DRF) ─────────────────────────────────────────────────────
+django
+djangorestframework
+django-cors-headers
+dj-database-url
 python-dotenv
-pydantic[email]
-pydantic-settings
-python-multipart
 
-# ── Database ──────────────────────────────────────────────────────────────────
-sqlalchemy
-psycopg2-binary          # PostgreSQL driver
-geoalchemy2              # PostGIS geometry type support
-
-# ── HTTP (OSRM + external calls) ─────────────────────────────────────────────
-httpx
-
-# ── Auth (Phase 5 — not yet active) ──────────────────────────────────────────
-python-jose[cryptography]
-passlib[bcrypt]
-
-# ── Testing ───────────────────────────────────────────────────────────────────
-pytest
-pytest-asyncio
-httpx                    # async test client
+# ── HTTP (OSRM routing client) ────────────────────────────────────────────────
+requests
