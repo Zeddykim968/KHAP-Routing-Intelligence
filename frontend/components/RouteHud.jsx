@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ArrowLeft, MapPin, Navigation, Play, Square } from "lucide-react";
+import { ArrowLeft, Bike, Car, Footprints, MapPin, Navigation, Play, Square } from "lucide-react";
 import { formatArrival, formatDistance, formatDuration, formatSpeed, formatStepDistance } from "@/lib/format";
 import { stepIcon } from "@/lib/labels";
 import styles from "./RouteHud.module.css";
+
+// Same three modes OpenRouteService exposes on its free profiles.
+const TRAVEL_MODES = [
+  { id: "driving", label: "Drive", Icon: Car, copy: "via fastest route" },
+  { id: "walking", label: "Walk", Icon: Footprints, copy: "via walking route" },
+  { id: "cycling", label: "Cycle", Icon: Bike, copy: "via cycling route" },
+];
 
 export default function RouteHud({
   route,
@@ -16,6 +23,9 @@ export default function RouteHud({
   onStart,
   onSimulate,
   onExitNav,
+  travelMode = "driving",
+  routeBusy = false,
+  onTravelMode,
 }) {
   const activeRef = useRef(null);
 
@@ -30,9 +40,28 @@ export default function RouteHud({
   const remainingS = progress ? progress.remaining_s : route.duration_s;
   const frac = progress ? progress.frac : 0;
   const steps = route.steps || [];
+  const mode = TRAVEL_MODES.find((m) => m.id === travelMode) || TRAVEL_MODES[0];
 
   return (
     <div className={styles.wrap}>
+      <div className={styles.modes} role="tablist" aria-label="Travel mode">
+        {TRAVEL_MODES.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={travelMode === id}
+            className={`${styles.modeTab} ${travelMode === id ? styles.modeOn : ""}`}
+            onClick={() => onTravelMode?.(id)}
+            disabled={!!navActive || routeBusy}
+          >
+            <Icon size={17} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+        {routeBusy && <span className={styles.modeBusy}>Updating…</span>}
+      </div>
+
       <div className={styles.summary}>
         <div className={styles.eta}>
           <div className={styles.arrival}>{formatArrival(remainingS)}</div>
@@ -41,7 +70,7 @@ export default function RouteHud({
         <div className={styles.distBlock}>
           <div className={styles.bigDist}>{formatDistance(remaining)}</div>
           <div className={styles.sub}>
-            via fastest route
+            {mode.copy}
             {progress?.speed != null && navActive ? ` · ${formatSpeed(progress.speed)}` : ""}
           </div>
         </div>

@@ -640,7 +640,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"  facilities:  {len(FACILITIES)} total "
-                f"({created} created, {updated} updated) → "
+                f"({created} created, {updated} updated) -> "
                 f"{Facility.objects.count()} in database"
             )
         )

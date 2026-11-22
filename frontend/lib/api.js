@@ -26,12 +26,8 @@ async function request(path, options = {}) {
   return data;
 }
 
-export function fetchMeta() {
-  return request("/meta/");
-}
-
 export function fetchNearest(lat, lon, opts = {}) {
-  const { limit = 20, type, openNow, emergency } = opts;
+  const { limit = 20, type, openNow, emergency, profile } = opts;
   const p = new URLSearchParams();
   p.set("lat", String(lat));
   p.set("lon", String(lon));
@@ -39,6 +35,7 @@ export function fetchNearest(lat, lon, opts = {}) {
   if (type && type !== "all") p.set("facility_type", type);
   if (openNow) p.set("open_now", "true");
   if (emergency) p.set("emergency", "true");
+  if (profile && profile !== "driving") p.set("profile", profile);
   return request(`/facilities/nearest/?${p.toString()}`);
 }
 
@@ -57,7 +54,8 @@ export function fetchFacility(id) {
   return request(`/facilities/${id}/`);
 }
 
-export function fetchRoute(start, end) {
+export function fetchRoute(start, end, opts = {}) {
+  const { profile = "driving" } = opts;
   return request("/route/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -66,6 +64,7 @@ export function fetchRoute(start, end) {
       start_lon: start.lon,
       end_lat: end.lat,
       end_lon: end.lon,
+      profile,
     }),
   });
 }

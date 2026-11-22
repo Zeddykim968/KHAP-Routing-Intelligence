@@ -1,6 +1,6 @@
 # KHAP — Kenya Health Access Platform
 
-A healthcare-finder and live-routing platform built with Django, Django REST Framework, Next.js, MapLibre GL, and OSRM.
+A healthcare-finder and live-routing platform built with Django, Django REST Framework, Next.js, MapLibre GL, and OpenRouteService.
 
 ## Project Structure
 
@@ -9,11 +9,9 @@ KHAP/
 ├── backend/
 │   ├── manage.py
 │   ├── khap/               # Django project (settings, urls, wsgi, asgi)
-│   └── facilities/         # models, serializers, views, urls, OSRM client, seed command
+│   └── facilities/         # models, serializers, views, urls, OpenRouteService client, seed command
 ├── frontend/               # Next.js web UI (App Router, MapLibre GL map)
-├── database/               # Legacy PostGIS schema notes
-├── osrm/                   # Local OSRM setup notes (Docker)
-├── .env.example
+├── .env                    # local configuration (git-ignored)
 ├── requirements.txt
 └── README.md
 ```
@@ -36,26 +34,29 @@ KHAP/
 | `DJANGO_DEBUG`         | Debug mode                           | `true`                           |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts                | `*`                              |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated CORS origins         | `*`                              |
-| `OSRM_URL`             | OSRM routing engine URL              | `http://router.project-osrm.org` |
+| `ORS_API_KEY`          | OpenRouteService API key (required)  | unset → routing returns an error |
+| `ORS_URL`              | OpenRouteService base URL            | `https://api.openrouteservice.org` |
+| `ORS_PROFILE`          | Default ORS profile                  | `driving-car`                    |
+| `DB_CONNECT_TIMEOUT`   | PostgreSQL connect timeout (seconds) | `5`                              |
 | `NEXT_PUBLIC_API_URL`  | Frontend API host override           | `/api` rewrite (same origin)     |
 
 Set backend vars in `.env` (repo root or `backend/`); frontend vars in `frontend/.env.local`.
-See `.env.example` for the full template.
+See the variable table above.
 
 ## API
 
-- `GET  /api/health/` — health + DB/OSRM status
+- `GET  /api/health/` — health + DB/OpenRouteService status
 - `GET  /api/meta/` — facility types, services, insurers, counties
 - `GET  /api/facilities/` — list with filters (type, county, service, insurance, emergency, open_now, search)
-- `GET  /api/facilities/nearest/?lat=&lon=&limit=` — nearest facilities by haversine distance
+- `GET  /api/facilities/nearest/?lat=&lon=&limit=&profile=` — nearest facilities ranked by ORS road distance (errors if ORS fails)
 - `GET  /api/search/?q=` — typeahead search
-- `POST /api/route/` — OSRM route + turn-by-turn steps between two lat/lon points
+- `POST /api/route/` — OpenRouteService route + turn-by-turn steps between two lat/lon points
 
 ## User Preferences
 
 - Django + Django REST Framework backend; Next.js frontend (replaces FastAPI + Vite/React)
-- SQLite by default; PostgreSQL via `DATABASE_URL` (no PostGIS required — haversine distances)
-- OSRM for road routing; public demo server as default fallback (`http://router.project-osrm.org`)
+- PostgreSQL via `DATABASE_URL` (no PostGIS required — haversine distances); no silent SQLite fallback — a failed Postgres connection raises the driver error at startup
+- OpenRouteService (matrix + directions) as the only routing engine — no OSRM or straight-line fallback; ORS failures surface as explicit errors
 - MapLibre GL with free CARTO styles (positron light / dark-matter dark) for the map
 - CSS Modules for component styling
 - Google-Maps-style UI: floating search, bottom sheet, filters, route HUD, live navigation, dark mode

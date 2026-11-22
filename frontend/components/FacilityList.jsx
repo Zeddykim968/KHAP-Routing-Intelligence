@@ -1,7 +1,7 @@
 "use client";
 
 import { Accessibility, Crosshair, MapPin, Siren, TriangleAlert } from "lucide-react";
-import { formatDistance, openState } from "@/lib/format";
+import { formatDistance, formatDuration, openState } from "@/lib/format";
 import { TYPE_LABELS } from "@/lib/labels";
 import styles from "./FacilityList.module.css";
 
@@ -76,16 +76,22 @@ export default function FacilityList({
     );
   }
 
+  // OpenRouteService ranks by road distance, so show that when it is present.
+  const hasTravel = items.some((f) => f.travel_distance_m != null);
+
   return (
     <div className={`${styles.list} khap-scroll`} role="list">
       <div className={styles.head}>
         {items.length} {items.length === 1 ? "facility" : "facilities"} nearby
-        <span className={styles.headSub}>sorted by distance</span>
+        <span className={styles.headSub}>
+          {hasTravel ? "sorted by travel distance" : "sorted by distance"}
+        </span>
       </div>
 
       {items.map((f) => {
         const st = f.is_open === true || f.is_open === false ? openState(f.is_open) : null;
         const ins = f.insurances || [];
+        const shownDistance = f.travel_distance_m ?? f.distance_m;
         return (
           <button
             key={f.id}
@@ -95,7 +101,15 @@ export default function FacilityList({
           >
             <div className={styles.top}>
               <span className={styles.name}>{f.name}</span>
-              <span className={styles.dist}>{formatDistance(f.distance_m)}</span>
+              <span className={styles.dist}>
+                {formatDistance(shownDistance)}
+                {f.travel_duration_s != null && (
+                  <span className={styles.distEta}>
+                    {" "}
+                    {formatDuration(f.travel_duration_s)}
+                  </span>
+                )}
+              </span>
             </div>
 
             <div className={styles.meta}>

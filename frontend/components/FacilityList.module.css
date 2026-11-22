@@ -58,6 +58,11 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
+  white-space: nowrap;
+}
+.distEta {
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .meta {

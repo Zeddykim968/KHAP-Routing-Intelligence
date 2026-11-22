@@ -1,20 +1,30 @@
 """
-Service layer: distance maths, opening-hours parsing, and the OSRM client.
+Service layer: distance maths, opening-hours parsing, and the OpenRouteService client.
 
-- `haversine_m` powers nearest-facility ranking (works on SQLite and
-  PostgreSQL alike).
+- `haversine_m` is straight-line distance, used only to annotate the plain
+  facility list and to pre-select candidate facilities for the ORS matrix.
+  It is never used to rank or to produce a route.
 - `is_open_now` interprets common OSM opening-hours strings.
-- `get_route` talks to the OSRM routing engine and returns turn-by-turn
-  steps ready for the frontend.
+- `ors_matrix` asks OpenRouteService for real road distance/duration from the
+  user to a batch of facilities, which is what the nearest-facility endpoint
+  ranks by.
+- `get_route` returns turn-by-turn directions from OpenRouteService.
+
+There is no fallback engine: every routing/distance failure raises
+`RoutingServiceError` (or `NoRouteError` when ORS reports no path).
 """
 from __future__ import annotations
 
+import logging
 import math
+import time
 from datetime import datetime
 
 import requests
 from django.conf import settings
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 # ── Distance ──────────────────────────────────────────────────────────────────
 
@@ -140,71 +150,291 @@ def is_open_now(opening_hours: str | None, now: datetime | None = None) -> bool 
     return False
 
 
-# ── OSRM routing client ───────────────────────────────────────────────────────
+# ── Errors ────────────────────────────────────────────────────────────────────
 
 class NoRouteError(ValueError):
-    """OSRM reports no routable path between the points (HTTP 404 to client)."""
+    """The routing engine reports no path between the points (HTTP 404 to client)."""
 
 
 class RoutingServiceError(RuntimeError):
-    """OSRM is unreachable or returned an unexpected payload (HTTP 502)."""
+    """OpenRouteService is unreachable, unconfigured, or returned an unexpected payload (HTTP 502)."""
 
 
-_TURN_VERBS = {
-    "turn": "Turn",
-    "end of road": "Turn",
-    "fork": "Keep {mod}",
-    "continue": "Continue",
-    "merge": "Merge",
-    "on ramp": "Take the ramp",
-    "off ramp": "Take the exit",
-    "new name": "Continue",
-    "roundabout": "Enter the roundabout",
-    "rotary": "Enter the roundabout",
-    "roundabout turn": "Turn",
-    "notification": "Continue",
+# ── OpenRouteService client ───────────────────────────────────────────────────
+
+# Public profile names used by the API ↔ ORS profile ids.
+ORS_PROFILE_MAP = {
+    "driving": "driving-car",
+    "driving-car": "driving-car",
+    "walking": "foot-walking",
+    "foot-walking": "foot-walking",
+    "cycling": "cycling-regular",
+    "cycling-regular": "cycling-regular",
+    "wheelchair": "wheelchair",
 }
 
 
-def _step_instruction(step: dict, is_last: bool) -> str:
-    maneuver = step.get("maneuver", {})
-    mtype = maneuver.get("type", "continue")
-    modifier = maneuver.get("modifier", "")
-    road = step.get("name") or ""
-    onto = f" onto {road}" if road else ""
-
-    if is_last or mtype == "arrive":
-        return f"You have arrived at your destination{onto}" if road else "You have arrived at your destination"
-    if mtype == "depart":
-        return f"Head {modifier or 'out'}{onto}" if road else f"Head {modifier or 'out'}"
-    if mtype in ("roundabout", "rotary"):
-        exit_no = maneuver.get("exit")
-        exit_part = f" and take exit {exit_no}" if exit_no else ""
-        return f"Enter the roundabout{exit_part}{onto}"
-
-    verb_tpl = _TURN_VERBS.get(mtype, "Continue")
-    verb = verb_tpl.format(mod=modifier.replace("_", " ").capitalize()) if "{mod}" in verb_tpl else verb_tpl
-    if modifier:
-        verb = f"{verb} {modifier.replace('_', ' ')}"
-    return f"{verb}{onto}" if road else verb
+def ors_available() -> bool:
+    """True when an OpenRouteService API key is configured."""
+    return bool(getattr(settings, "ORS_API_KEY", ""))
 
 
-def _maneuver_icon_type(step: dict, is_last: bool) -> str:
-    """Coarse icon class for the UI (straight / left / right / roundabout / arrive)."""
-    if is_last:
-        return "arrive"
-    maneuver = step.get("maneuver", {})
-    mtype = maneuver.get("type", "continue")
-    modifier = maneuver.get("modifier", "") or ""
-    if mtype in ("roundabout", "rotary"):
-        return "roundabout"
-    if modifier in ("left", "sharp left", "slight left"):
-        return "left"
-    if modifier in ("right", "sharp right", "slight right"):
-        return "right"
-    if modifier == "uturn":
-        return "uturn"
-    return "straight"
+def ors_profile_id(profile: str | None = None) -> str:
+    """Map a public profile name (`driving`, `walking`, …) to an ORS profile id."""
+    return ORS_PROFILE_MAP.get((profile or "").strip().lower(), settings.ORS_PROFILE)
+
+
+def _ors_post(path: str, payload: dict, timeout: float | None = None) -> dict:
+    """POST to OpenRouteService and return the decoded JSON, or raise."""
+    key = settings.ORS_API_KEY
+    if not key:
+        raise RoutingServiceError(
+            "OpenRouteService API key is not configured — set ORS_API_KEY"
+        )
+
+    try:
+        resp = requests.post(
+            f"{settings.ORS_URL}{path}",
+            json=payload,
+            headers={
+                "Authorization": key,
+                "Content-Type": "application/json",
+                "Accept": "application/json, application/geo+json",
+            },
+            timeout=timeout or settings.ORS_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise RoutingServiceError(f"OpenRouteService request failed: {exc}") from exc
+
+    if resp.status_code == 200:
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise RoutingServiceError("OpenRouteService returned invalid JSON") from exc
+
+    detail = ""
+    try:
+        error = resp.json().get("error") or {}
+        detail = error.get("message") or ""
+    except ValueError:
+        pass
+
+    if resp.status_code == 404:
+        raise NoRouteError(
+            detail or "OpenRouteService could not find a routable path between the points"
+        )
+    suffix = f": {detail}" if detail else ""
+    raise RoutingServiceError(
+        f"OpenRouteService returned HTTP {resp.status_code}{suffix}"
+    )
+
+
+def ors_matrix(
+    origin_lat: float,
+    origin_lon: float,
+    destinations: list[tuple[float, float]],
+    profile: str | None = None,
+) -> list[dict]:
+    """
+    Road distance and duration from `(origin_lat, origin_lon)` to each
+    `(lat, lon)` destination, using the ORS Matrix API.
+
+    Returns `[{"index": i, "distance_m": m|None, "duration_s": s|None}, …]`
+    in the same order as `destinations`; unroutable points come back as None.
+    Raises NoRouteError / RoutingServiceError on failure.
+    """
+    if not destinations:
+        return []
+
+    profile_id = ors_profile_id(profile)
+    batch_size = settings.ORS_MATRIX_BATCH
+    results: list[dict] = []
+
+    for start in range(0, len(destinations), batch_size):
+        batch = destinations[start : start + batch_size]
+        locations = [[origin_lon, origin_lat]] + [
+            [lon, lat] for lat, lon in batch
+        ]
+        payload = {
+            "locations": locations,
+            "sources": [0],
+            "destinations": list(range(1, len(locations))),
+            "metrics": ["distance", "duration"],
+            "units": "m",
+        }
+        data = _ors_post(f"/v2/matrix/{profile_id}", payload)
+
+        distances = (data.get("distances") or [[]])[0]
+        durations = (data.get("durations") or [[]])[0]
+        for offset in range(len(batch)):
+            results.append(
+                {
+                    "index": start + offset,
+                    "distance_m": distances[offset] if offset < len(distances) else None,
+                    "duration_s": durations[offset] if offset < len(durations) else None,
+                }
+            )
+
+    return results
+
+
+_ORS_STEP_ICONS = {
+    0: "left",
+    1: "right",
+    2: "left",       # sharp left
+    3: "right",      # sharp right
+    4: "left",       # slight left
+    5: "right",      # slight right
+    6: "straight",
+    7: "roundabout",
+    8: "roundabout",
+    9: "uturn",
+    10: "arrive",
+    11: "straight",  # depart
+    12: "straight",  # keep left
+    13: "straight",  # keep right
+}
+
+
+def _ors_route(
+    start_lon: float,
+    start_lat: float,
+    end_lon: float,
+    end_lat: float,
+    profile: str = "driving",
+) -> dict:
+    """Directions via the ORS Directions API, normalised to the API payload."""
+    profile_id = ors_profile_id(profile)
+    data = _ors_post(
+        f"/v2/directions/{profile_id}/geojson",
+        {
+            "coordinates": [[start_lon, start_lat], [end_lon, end_lat]],
+            "instructions": True,
+            "language": "en",
+            "units": "m",
+        },
+    )
+
+    features = data.get("features") or []
+    if not features:
+        raise NoRouteError("No route found between the requested points")
+
+    feature = features[0]
+    geometry = feature.get("geometry") or {}
+    coordinates = geometry.get("coordinates") or []
+    if len(coordinates) < 2:
+        raise NoRouteError("No route found between the requested points")
+
+    properties = feature.get("properties") or {}
+    summary = properties.get("summary") or {}
+    segments = properties.get("segments") or []
+
+    raw_steps = [step for segment in segments for step in (segment.get("steps") or [])]
+    steps = []
+    for i, step in enumerate(raw_steps):
+        is_last = i == len(raw_steps) - 1
+        icon = _ORS_STEP_ICONS.get(step.get("type"), "straight")
+        if is_last:
+            icon = "arrive"
+
+        way_points = step.get("way_points") or []
+        point = None
+        if way_points and 0 <= way_points[0] < len(coordinates):
+            point = coordinates[way_points[0]]
+
+        instruction = (step.get("instruction") or "").strip()
+        if is_last and not instruction:
+            instruction = "You have arrived at your destination"
+
+        steps.append(
+            {
+                "index": i,
+                "instruction": instruction,
+                "type": step.get("type"),
+                "icon": icon,
+                "name": step.get("name") or "",
+                "distance_m": step.get("distance", 0.0),
+                "duration_s": step.get("duration", 0.0),
+                "location": {"lon": point[0], "lat": point[1]} if point else None,
+            }
+        )
+
+    distance = summary.get("distance")
+    duration = summary.get("duration")
+    if distance is None:
+        distance = sum(step.get("distance_m") or 0 for step in steps)
+    if duration is None:
+        duration = sum(step.get("duration_s") or 0 for step in steps)
+
+    return {
+        "distance_m": distance,
+        "duration_s": duration,
+        "route": coordinates,  # [[lon, lat], …]
+        "steps": steps,
+        "profile": profile,
+        "engine": "openrouteservice",
+        "start": {"lon": start_lon, "lat": start_lat},
+        "end": {"lon": end_lon, "lat": end_lat},
+    }
+
+
+# ── Nearest-facility ranking (ORS travel matrix) ─────────────────────────────
+
+def rank_facilities_by_travel(
+    lat: float,
+    lon: float,
+    facilities: list,
+    profile: str | None = None,
+) -> tuple[list, dict]:
+    """
+    Rank candidate facilities by real travel distance from `(lat, lon)`.
+
+    Each facility gets `travel_distance_m` and `travel_duration_s` from the ORS
+    matrix. Every ORS failure is raised to the caller — there is no
+    straight-line ranking fallback. Facilities ORS cannot route to are omitted
+    (they have no road route) and counted in the returned metadata.
+    """
+    meta = {
+        "engine": "openrouteservice",
+        "profile": ors_profile_id(profile),
+        "travel_distances": True,
+    }
+    facilities = list(facilities)
+    if not facilities:
+        meta["routed_count"] = 0
+        return [], meta
+
+    destinations = [(f.latitude, f.longitude) for f in facilities]
+    matrix = ors_matrix(lat, lon, destinations, profile=profile)
+
+    routed: list = []
+    for index, facility in enumerate(facilities):
+        row = matrix[index] if index < len(matrix) else {}
+        distance = row.get("distance_m")
+        if distance is None:
+            continue
+        facility.travel_distance_m = distance
+        facility.travel_duration_s = row.get("duration_s")
+        routed.append(facility)
+
+    unrouted_count = len(facilities) - len(routed)
+    if not routed:
+        raise NoRouteError(
+            "OpenRouteService could not route to any candidate facility from this location"
+        )
+
+    routed.sort(key=lambda f: f.travel_distance_m)
+
+    meta["routed_count"] = len(routed)
+    if unrouted_count:
+        meta["unrouted_count"] = unrouted_count
+        meta["note"] = (
+            f"{unrouted_count} facility(ies) have no road route from this "
+            "location and were omitted."
+        )
+        logger.info("ORS matrix left %s candidates unrouted", unrouted_count)
+
+    return routed, meta
 
 
 def get_route(
@@ -215,89 +445,52 @@ def get_route(
     profile: str = "driving",
 ) -> dict:
     """
-    Call OSRM and return a normalised route payload:
+    Road route between two points via OpenRouteService.
 
-    {distance_m, duration_s, route: [[lon, lat], …], steps: [...],
-     start: {lon, lat}, end: {lon, lat}}
-
-    Raises NoRouteError / RoutingServiceError on failure.
+    Raises NoRouteError / RoutingServiceError on failure; there is no fallback
+    routing engine.
     """
-    if profile not in ("driving", "walking", "cycling"):
+    if profile not in ("driving", "walking", "cycling", "wheelchair"):
         profile = "driving"
+    return _ors_route(start_lon, start_lat, end_lon, end_lat, profile=profile)
 
-    url = (
-        f"{settings.OSRM_URL}/route/v1/{profile}/"
-        f"{start_lon},{start_lat};{end_lon},{end_lat}"
-    )
-    params = {
-        "overview": "full",
-        "geometries": "geojson",
-        "steps": "true",
-        "alternatives": "false",
-    }
+
+_ORS_PING_TTL_S = 300
+_ors_ping_cache: dict = {"at": 0.0, "result": None}
+
+
+def ping_ors(timeout: float = 8.0) -> dict:
+    """
+    OpenRouteService reachability/credential check for the health endpoint.
+
+    A tiny two-point matrix request is used (ORS has no public health route)
+    and the result is cached briefly so health polling does not burn quota.
+    """
+    if not ors_available():
+        return {"status": "not_configured", "note": "Set ORS_API_KEY to enable OpenRouteService"}
+
+    now = time.monotonic()
+    cached = _ors_ping_cache.get("result")
+    if cached and now - _ors_ping_cache.get("at", 0.0) < _ORS_PING_TTL_S:
+        return cached
 
     try:
-        resp = requests.get(url, params=params, timeout=12)
-    except requests.RequestException as exc:
-        raise RoutingServiceError(f"OSRM request failed: {exc}") from exc
-
-    if resp.status_code != 200:
-        raise RoutingServiceError(f"OSRM returned HTTP {resp.status_code}")
-
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        raise RoutingServiceError("OSRM returned invalid JSON") from exc
-
-    code = data.get("code", "")
-    if code == "NoRoute":
-        raise NoRouteError("No drivable route between the requested points")
-    if code != "Ok":
-        raise RoutingServiceError(f"OSRM error: {code} {data.get('message', '')}")
-
-    route = data["routes"][0]
-    legs = route.get("legs") or [{}]
-    raw_steps = legs[0].get("steps") or []
-    total = len(raw_steps)
-
-    steps = []
-    for i, step in enumerate(raw_steps):
-        is_last = i == total - 1
-        maneuver = step.get("maneuver", {})
-        location = maneuver.get("location", [None, None])
-        steps.append(
+        _ors_post(
+            f"/v2/matrix/{settings.ORS_PROFILE}",
             {
-                "index": i,
-                "instruction": _step_instruction(step, is_last),
-                "type": maneuver.get("type", "continue"),
-                "icon": _maneuver_icon_type(step, is_last),
-                "name": step.get("name") or "",
-                "distance_m": step.get("distance", 0.0),
-                "duration_s": step.get("duration", 0.0),
-                "location": {"lon": location[0], "lat": location[1]},
-            }
-        )
-
-    return {
-        "distance_m": route.get("distance", 0.0),
-        "duration_s": route.get("duration", 0.0),
-        "route": route["geometry"]["coordinates"],  # [[lon, lat], …]
-        "steps": steps,
-        "profile": profile,
-        "start": {"lon": start_lon, "lat": start_lat},
-        "end": {"lon": end_lon, "lat": end_lat},
-    }
-
-
-def ping_osrm(timeout: float = 5.0) -> dict:
-    """Lightweight reachability check used by the health endpoint."""
-    try:
-        resp = requests.get(
-            f"{settings.OSRM_URL}/nearest/v1/driving/36.8219,-1.2921",
+                "locations": [[36.8219, -1.2921], [36.8150, -1.2900]],
+                "sources": [0],
+                "destinations": [1],
+                "metrics": ["distance"],
+                "units": "m",
+            },
             timeout=timeout,
         )
-        if resp.status_code == 200:
-            return {"status": "ok", "url": settings.OSRM_URL}
-        return {"status": "degraded", "http_status": resp.status_code}
-    except requests.RequestException as exc:
-        return {"status": "error", "detail": str(exc)}
+        result = {"status": "ok", "url": settings.ORS_URL, "profile": settings.ORS_PROFILE}
+    except NoRouteError as exc:
+        result = {"status": "ok", "url": settings.ORS_URL, "note": str(exc)}
+    except RoutingServiceError as exc:
+        result = {"status": "error", "detail": str(exc)}
+
+    _ors_ping_cache.update({"at": now, "result": result})
+    return result

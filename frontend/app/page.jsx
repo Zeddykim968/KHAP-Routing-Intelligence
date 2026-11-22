@@ -68,6 +68,7 @@ export default function Page() {
   const [detailError, setDetailError] = useState(null);
 
   // Route & navigation
+  const [travelMode, setTravelMode] = useState("driving"); // driving | walking | cycling
   const [route, setRoute] = useState(null);
   const [routeDest, setRouteDest] = useState(null);
   const [routeStatus, setRouteStatus] = useState("idle");
@@ -98,8 +99,10 @@ export default function Page() {
   const lastRerouteRef = useRef(0);
   const toastTimerRef = useRef(null);
   const sheetHRef = useRef(null);
+  const travelModeRef = useRef(travelMode);
 
   routeRef.current = route;
+  travelModeRef.current = travelMode;
   navActiveRef.current = navActive;
   simActiveRef.current = simActive;
   destRef.current = routeDest || destRef.current;
@@ -223,10 +226,17 @@ export default function Page() {
     if (!origin) return;
     let stale = false;
     setListStatus("loading");
-    fetchNearest(origin.lat, origin.lon, { type: typeFilter, openNow, emergency })
+    fetchNearest(origin.lat, origin.lon, {
+      type: typeFilter,
+      openNow,
+      emergency,
+      profile: travelMode,
+    })
       .then((res) => {
         if (stale) return;
-        setFacilities(Array.isArray(res) ? res : res?.results || []);
+        setFacilities(
+          Array.isArray(res) ? res : res?.facilities || res?.results || []
+        );
         setListStatus("ready");
       })
       .catch((e) => {
@@ -237,7 +247,7 @@ export default function Page() {
     return () => {
       stale = true;
     };
-  }, [origin, typeFilter, openNow, emergency, listNonce]);
+  }, [origin, typeFilter, openNow, emergency, travelMode, listNonce]);
 
   /* ── route geometry precompute (cumulative distances + step vertices) ──── */
   useEffect(() => {
@@ -382,10 +392,14 @@ export default function Page() {
   }, []);
 
   const planRoute = useCallback(
-    async (start, dest, { keepMode = false } = {}) => {
+    async (start, dest, { keepMode = false, profile } = {}) => {
       setRouteStatus("loading");
       try {
-        const r = await fetchRoute(start, { lat: dest.latitude, lon: dest.longitude });
+        const r = await fetchRoute(
+          start,
+          { lat: dest.latitude, lon: dest.longitude },
+          { profile: profile || travelModeRef.current }
+        );
         setRoute(r);
         setRouteDest(dest);
         setRouteStatus("ready");
@@ -402,6 +416,21 @@ export default function Page() {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fitRoute, showToast]
+  );
+
+  /* ── travel mode (Google-Maps-style Drive / Walk / Cycle) ────────────────── */
+  const changeTravelMode = useCallback(
+    (next) => {
+      if (!next || next === travelModeRef.current) return;
+      travelModeRef.current = next;
+      setTravelMode(next);
+      const dest = destRef.current;
+      if (routeRef.current && origin && dest) {
+        planRoute(origin, dest, { keepMode: true, profile: next });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [origin, planRoute]
   );
 
   const directions = useCallback(
@@ -576,6 +605,9 @@ export default function Page() {
         progress={progress}
         navActive={navActive}
         simActive={simActive}
+        travelMode={travelMode}
+        routeBusy={routeStatus === "loading"}
+        onTravelMode={changeTravelMode}
         onBack={() => {
           setMode(detail ? "detail" : "list");
         }}

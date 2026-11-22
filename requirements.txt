@@ -5,5 +5,5 @@ django-cors-headers
 dj-database-url
 python-dotenv
 
-# ── HTTP (OSRM routing client) ────────────────────────────────────────────────
+# ── HTTP (OpenRouteService routing client) ────────────────────────────────────
 requests

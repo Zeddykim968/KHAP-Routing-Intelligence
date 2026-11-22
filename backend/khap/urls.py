@@ -1,6 +1,7 @@
 """Root URL configuration for KHAP."""
 from django.contrib import admin
 from django.urls import include, path
+from rest_framework.decorators import api_view
 
 from khap import settings
 
@@ -12,13 +13,14 @@ API_INFO = {
         "meta": "GET  /api/meta/",
         "facilities": "GET  /api/facilities/",
         "facility_detail": "GET  /api/facilities/{id}/",
-        "nearest": "GET  /api/facilities/nearest/?lat=&lon=",
+        "nearest": "GET  /api/facilities/nearest/?lat=&lon=&limit=&profile=",
         "search": "GET  /api/search/?q=",
         "route": "POST /api/route/",
     },
 }
 
-
+    
+@api_view(["GET"])
 def api_index(_request):
     from rest_framework.response import Response
 

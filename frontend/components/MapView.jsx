@@ -6,9 +6,14 @@ import {
   Marker,
   NavigationControl,
   ScaleControl,
+  setWorkerUrl,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import styles from "./MapView.module.css";
+
+// Serve the MapLibre worker from /public instead of letting the bundler guess a
+// relative URL (Turbopack resolves it against the chunk, which returns HTML).
+setWorkerUrl("/maplibre-gl-worker.js");
 
 const LIGHT_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -52,6 +57,9 @@ export default function MapView({
   const appliedThemeRef = useRef(null);
   const handlersRef = useRef({ onSelectFacility, onMapClick, onDropPin });
   handlersRef.current = { onSelectFacility, onMapClick, onDropPin };
+  // Keep the latest puck available to the move handler without re-binding.
+  const puckRef = useRef(puck);
+  puckRef.current = puck;
 
   // -1 until the style has loaded — sources/layers cannot be added before that.
   const [styleEpoch, setStyleEpoch] = useState(-1);
@@ -90,7 +98,8 @@ export default function MapView({
       handlersRef.current.onDropPin?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
     });
     map.on("move", () => {
-      if (puckMarkerRef.current) updatePuckHeading(puckMarkerRef.current, map, puckRef.current);
+      if (puckMarkerRef.current)
+        updatePuckHeading(puckMarkerRef.current.getElement(), map, puckRef.current);
     });
 
     mapRef.current = map;
@@ -105,10 +114,6 @@ export default function MapView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Keep the latest puck available to the move handler without re-binding.
-  const puckRef = useRef(puck);
-  puckRef.current = puck;
 
   // ── theme switch (no-op when already applied) ──────────────────────────────
   useEffect(() => {
@@ -221,7 +226,7 @@ export default function MapView({
       puckMarkerRef.current.setLngLat([puck.lon, puck.lat]);
     }
     puckMarkerRef.current.getElement().classList.toggle(styles.puckNav, !!navActive);
-    updatePuckHeading(puckMarkerRef.current, map, puck);
+    updatePuckHeading(puckMarkerRef.current.getElement(), map, puck);
   }, [puck, navActive, styleEpoch]);
 
   // ── navigation camera (follow + pitch) ─────────────────────────────────────
@@ -247,9 +252,11 @@ export default function MapView({
   return <div ref={containerRef} className={styles.map} />;
 }
 
-function updatePuckHeading(el, map, puck) {
-  if (!el || !puck || !Number.isFinite(puck.heading) || puck.heading < 0) {
-    el?.style.setProperty("--heading-cw", "0deg");
+function updatePuckHeading(target, map, puck) {
+  const el = target?.getElement ? target.getElement() : target;
+  if (!(el instanceof HTMLElement)) return;
+  if (!puck || !Number.isFinite(puck.heading) || puck.heading < 0) {
+    el.style.setProperty("--heading-cw", "0deg");
     return;
   }
   const cw = (puck.heading - map.getBearing() + 360) % 360;

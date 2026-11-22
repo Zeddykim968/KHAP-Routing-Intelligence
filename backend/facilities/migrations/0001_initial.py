@@ -85,7 +85,7 @@ class Migration(migrations.Migration):
         ),
         migrations.CreateModel(
             name="Facility",
-            fields=[
+            fields= [
                 (
                     "id",
                     models.BigAutoField(

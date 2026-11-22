@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 3000"
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "postinstall": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs','public/maplibre-gl-worker.js')\""
   },
   "dependencies": {
     "next": "latest",

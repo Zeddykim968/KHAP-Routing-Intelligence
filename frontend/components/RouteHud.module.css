@@ -6,6 +6,50 @@
   overflow: hidden;
 }
 
+/* ── travel-mode tabs ───────────────────────────────────────────────────── */
+.modes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 16px 10px;
+}
+
+.modeTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.modeTab:hover:not(:disabled) {
+  background: var(--panel-3);
+  color: var(--text);
+}
+.modeTab:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.modeOn {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.modeBusy {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* ── ETA / distance summary ─────────────────────────────────────────────── */
 .summary {
   display: flex;

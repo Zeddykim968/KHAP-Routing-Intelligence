@@ -3,13 +3,13 @@ Facilities API views.
 
 Endpoints
 ---------
-GET  /api/health/               app + database + OSRM health check
+GET  /api/health/               app + database + OpenRouteService health check
 GET  /api/meta/                 filter metadata (types, services, insurers)
 GET  /api/facilities/           list/filter facilities (q, type, service, insurance…)
-GET  /api/facilities/nearest/   N nearest facilities to a GPS point
+GET  /api/facilities/nearest/   N nearest facilities to a GPS point (ORS travel matrix)
 GET  /api/facilities/{id}/      full detail for one facility
 GET  /api/search/               quick text search with optional distance
-POST /api/route/                OSRM route: geometry + turn-by-turn steps
+POST /api/route/                road route: geometry + turn-by-turn steps (OpenRouteService)
 """
 from __future__ import annotations
 
@@ -122,7 +122,17 @@ class FacilityViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericV
 
     @action(detail=False, methods=["get"], url_path="nearest")
     def nearest(self, request):
-        """GET /api/facilities/nearest/?lat=&lon=&limit=&type=… — N closest."""
+        """
+        GET /api/facilities/nearest/?lat=&lon=&limit=&type=… — N closest.
+
+        Candidates are narrowed with haversine distances (cheap), then ranked
+        by real road distance/duration from the user's location using the
+        OpenRouteService matrix API. ORS is the only engine: a missing key,
+        network failure or unroutable location returns an error response
+        instead of a straight-line fallback.
+        """
+        from django.conf import settings as dj_settings
+
         lat, lon = _parse_point(request.query_params)
         try:
             limit = int(request.query_params.get("limit", 8))
@@ -130,16 +140,32 @@ class FacilityViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericV
             limit = 8
         limit = max(1, min(limit, MAX_NEAREST))
 
+        profile = request.query_params.get("profile") or "driving"
+
         queryset = _apply_filters(
             Facility.objects.prefetch_related("services", "insurances"),
             request.query_params,
         )
-        nearest = self._with_distance(queryset, lat, lon)[:limit]
+        candidates = self._with_distance(queryset, lat, lon)
+        pool_size = max(limit, min(dj_settings.ORS_MATRIX_CANDIDATES, MAX_NEAREST))
+        candidates = candidates[:pool_size]
+
+        try:
+            ranked, routing = services.rank_facilities_by_travel(
+                lat, lon, candidates, profile=profile
+            )
+        except services.NoRouteError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except services.RoutingServiceError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        nearest = ranked[:limit]
 
         serializer = self.get_serializer(nearest, many=True)
         return Response(
             {
                 "resolved_location": {"lat": lat, "lon": lon},
+                "routing": routing,
                 "count": len(serializer.data),
                 "facilities": serializer.data,
             }
@@ -219,7 +245,7 @@ class MetaView(APIView):
 
 
 class RouteView(APIView):
-    """POST /api/route/ — OSRM route between two GPS points."""
+    """POST /api/route/ — road route between two GPS points via OpenRouteService."""
 
     def post(self, request):
         try:
@@ -258,7 +284,7 @@ class RouteView(APIView):
 
 
 class HealthView(APIView):
-    """GET /api/health/ — database + OSRM reachability."""
+    """GET /api/health/ — database + OpenRouteService reachability."""
 
     authentication_classes = []
     permission_classes = []
@@ -279,12 +305,12 @@ class HealthView(APIView):
             checks["database"] = {"status": "error", "detail": str(exc)}
             overall = "unhealthy"
 
-        osrm = services.ping_osrm()
-        checks["osrm"] = osrm
-        if osrm["status"] == "error":
-            overall = "unhealthy" if overall == "healthy" else overall
-        elif osrm["status"] != "ok" and overall == "healthy":
-            overall = "degraded"
+        # OpenRouteService is the only routing engine, so an unusable ORS
+        # (no key, network error, rejected credentials) means routing is down.
+        ors = services.ping_ors()
+        checks["openrouteservice"] = ors
+        if ors["status"] != "ok":
+            overall = "unhealthy"
 
         from django.conf import settings as dj_settings
 

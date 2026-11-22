@@ -26,6 +26,8 @@ class FacilitySerializer(serializers.ModelSerializer):
         source="get_emergency_display", read_only=True
     )
     distance_m = serializers.SerializerMethodField()
+    travel_distance_m = serializers.SerializerMethodField()
+    travel_duration_s = serializers.SerializerMethodField()
     is_open = serializers.SerializerMethodField()
 
     class Meta:
@@ -48,6 +50,8 @@ class FacilitySerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "distance_m",
+            "travel_distance_m",
+            "travel_duration_s",
             "is_open",
             "services",
             "insurances",
@@ -55,6 +59,16 @@ class FacilitySerializer(serializers.ModelSerializer):
 
     def get_distance_m(self, obj) -> float | None:
         value = getattr(obj, "distance_m", None)
+        return round(value, 1) if value is not None else None
+
+    def get_travel_distance_m(self, obj) -> float | None:
+        """Road distance from the query origin (OpenRouteService matrix)."""
+        value = getattr(obj, "travel_distance_m", None)
+        return round(value, 1) if value is not None else None
+
+    def get_travel_duration_s(self, obj) -> float | None:
+        """Estimated road travel time from the query origin, in seconds."""
+        value = getattr(obj, "travel_duration_s", None)
         return round(value, 1) if value is not None else None
 
     def get_is_open(self, obj) -> bool | None:
