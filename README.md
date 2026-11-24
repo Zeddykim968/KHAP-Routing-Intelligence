@@ -184,7 +184,7 @@ npm install
 npm run dev
 ```
 
-App at http://localhost:3000. Next.js rewrites `/api/*` to the Django backend, so no extra configuration is needed. To point elsewhere, set `NEXT_PUBLIC_API_URL` in `frontend/.env.local`.
+App at http://localhost:3000. Next.js rewrites `/api/*` to the Django backend, so no extra configuration is needed. To point elsewhere, set `NEXT_API_URL` in `frontend/.env.local` (or export it before starting the dev server).
 
 ### 3. Routing
 
@@ -212,7 +212,7 @@ than degraded or straight-line results.
 | `ORS_MATRIX_CANDIDATES` | Facilities ranked via the ORS matrix   | `25`                                 |
 | `ORS_MATRIX_BATCH`      | Matrix batch size (max 49 destinations) | `25`                                |
 | `DB_CONNECT_TIMEOUT`    | Seconds to wait for the PostgreSQL connection | `5`                            |
-| `NEXT_PUBLIC_API_URL`   | Frontend override for the API host     | `/api` (same-origin rewrite)         |
+| `NEXT_API_URL`          | Frontend override for the API host     | `/api` (same-origin rewrite)         |
 
 ---
 

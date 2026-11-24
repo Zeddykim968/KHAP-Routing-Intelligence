@@ -38,7 +38,7 @@ KHAP/
 | `ORS_URL`              | OpenRouteService base URL            | `https://api.openrouteservice.org` |
 | `ORS_PROFILE`          | Default ORS profile                  | `driving-car`                    |
 | `DB_CONNECT_TIMEOUT`   | PostgreSQL connect timeout (seconds) | `5`                              |
-| `NEXT_PUBLIC_API_URL`  | Frontend API host override           | `/api` rewrite (same origin)     |
+| `NEXT_API_URL`         | Frontend API host override           | `/api` rewrite (same origin)     |
 
 Set backend vars in `.env` (repo root or `backend/`); frontend vars in `frontend/.env.local`.
 See the variable table above.
